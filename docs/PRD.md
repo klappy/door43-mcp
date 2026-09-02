@@ -27,6 +27,10 @@ Status: proposed 2026-09-02. Cut for v1; new ideas go to v2.
 - R6 `telemetry` = read-only SQL over `door43mcp_telemetry`; no user data columns.
 - R7 Response cap on `execute` (bytes/tokens) with a truncation flag, never silent cuts.
 - R8 One `D43_HOST` var; works against prod, qa, and dcs-local.
+- R9 Every tool response is the envelope in SPEC §Tools — `observed_at`, echoed request, `next`, `cost`.
+- R10 `execute` supports `fields` (deterministic JSON-path projection); no semantic logic in the server.
+- R11 `docs()` with no arguments is a ≤ 2 KB boarding pass containing auth state and the four journeys.
+- R12 Errors carry a next step: 401 login URL or refreshed, 404 nearest paths, 405 v2 pointer.
 
 ## Acceptance (agent-observable, per P0007)
 1. `tools/list` returns exactly three tools.
@@ -36,6 +40,10 @@ Status: proposed 2026-09-02. Cut for v1; new ideas go to v2.
 5. `execute POST ...` is refused with a message naming v2.
 6. `telemetry` answers `SELECT tool_name, COUNT(*) ...` and refuses non-SELECT.
 7. A second operator deploys from README alone; journey 1 succeeds on their host.
+8. `docs()` returns a boarding pass under 2 KB that names the logged-in user.
+9. `execute GET /catalog/search?limit=1` with `fields:["[].full_name"]` returns under 300 bytes.
+10. A truncated response's `continue` payload, replayed verbatim, returns the next slice.
+11. `execute GET /api/v1/nonexistent` returns 404 with three nearest documented paths.
 
 ## v2 (parked)
 Mutating verbs behind gates; irreversible actions HUMAN-ONLY; per-user host selection.
