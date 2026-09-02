@@ -18,23 +18,55 @@ Cloudflare Workers · `agents` (`McpAgent`) · `@cloudflare/workers-oauth-provid
 (upstream = DCS OIDC) · Analytics Engine · KV for the provider's grant store.
 
 ## Tools
-### `docs({ query?, section? })`
-Fetches `https://<D43_HOST>/swagger.v1.json` (cache TTL 1h, ETag), returns matching
-paths/params/schemas for `query`; `section` narrows (e.g. `catalog`, `repos`). Also
-proxies `oddkit` canon for `query` when asked (`docs-proxy-canon-as-tool`). Never bundles.
 
-### `execute({ method, path, query?, headers? })`
-- `method ∈ {GET, HEAD}` in v1; others → 405 with `"mutations land in v2"`.
-- `path` must start with `/api/v1/` or be `/{owner}/{repo}/archive/{ref}.zip` (archive
-  passthrough, HEAD only — returns the resolved URL, not bytes).
-- Forwards `Authorization: token <user access token>`; refreshes on 401 once.
-- Response: `{ status, headers: {content-type, x-total-count, link}, body, truncated }`.
-  Body capped at 200 KB; `truncated: true` names the cap.
+All three share one **response envelope** (Design §3):
+```json
+{ "observed_at": "ISO-8601", "upstream": { "host": "git.door43.org", "version": "1.27.2+dcs" },
+  "request": { "tool": "execute", "method": "GET", "path": "/api/v1/…", "query": {}, "fields": [] },
+  "status": 200, "body": {}, "truncated": false,
+  "next": null | { "method": "GET", "path": "…", "query": { "page": 2 } },
+  "continue": null | { "…same shape, resumes a truncated body…" },
+  "hints": [ "one-line, factual, optional" ],
+  "cost": { "bytes": 0, "tokens_est": 0, "upstream_ms": 0 } }
+```
+`next` is derived from upstream `Link` / `X-Total-Count` and pre-formed as an execute call.
+
+### `docs({ level?, path?, query?, recipe? })`
+- No args → **L0 boarding pass** (≤ 2 KB): server version, upstream host+version+observed_at,
+  auth state (`logged_in_as` or `login_url`), the three contracts, domain map, journeys.
+- `level: 1` → domain map: `catalog`, `repos`, `user`, `orgs`, `misc` — one line + three most-used paths each.
+- `path: "/catalog/search"` → L2: that path's params, response shape, one example call.
+- `level: 3, path` → raw swagger fragment.
+- `query` → lexical match over path names + summaries (BM25), returns L2 stubs.
+- `recipe: "whoami" | "pin-release" | "read-file" | "list-releases"` → filled execute calls in order.
+- Swagger fetched from `https://<D43_HOST>/swagger.v1.json`, ETag-cached, TTL 1h. Canon proxy
+  via oddkit when `query` starts with `canon:`.
+
+### `execute({ method, path, query?, fields?, headers? })`
+- `method ∈ {GET, HEAD}` in v1; others → 405, body names v2.
+- `path`: `/api/v1/…`, or `/{owner}/{repo}/archive/{ref}.zip` (HEAD only → resolved URL in `body.url`).
+- `fields`: array of JSON paths (`"release.tag_name"`, `"[].full_name"`) applied to the body after
+  upstream returns; deterministic; unknown paths yield `null`, never error.
+- Forwards `Authorization: token <access>`; on 401 refreshes once and retries; if still 401,
+  `status: 401`, `hints: ["grant expired; re-login at <url>"]`.
+- `User-Agent: door43-mcp/<ver> (+https://door43.klappy.dev; consumer=<label>)`.
+- Body cap 200 KB **after** `fields`; over cap → `truncated: true` + `continue` payload
+  (page/range) — never a silent cut.
+- 404 → `hints` lists up to 3 nearest documented paths from the swagger index.
 
 ### `telemetry({ sql })`
 Read-only SQL against `door43mcp_telemetry`. Columns: `event_type, tool_name, method,
-path_prefix (first two segments only), status, consumer_label, duration_ms, bytes_out,
-tokens_out, count`. No user id, no full path, no query string.
+path_prefix (two segments), status, consumer_label, duration_ms, bytes_out, tokens_out,
+truncated, count`. No user id, no full path, no query string.
+
+## MCP resources & prompts (not tools; ceiling untouched)
+- Resource `door43://boarding-pass` — same bytes as `docs()`.
+- Resource `door43://swagger` — the cached swagger with ETag.
+- Prompts (v1.1): the four journeys as MCP prompts.
+
+## Endpoints
+`/mcp` (streamable HTTP) · `/authorize`, `/callback`, `/token` (provider) · `/health`
+(upstream reachability + version, public, no auth).
 
 ## Auth flow
 1. `/authorize` (provider) → redirect to `https://<D43_HOST>/login/oauth/authorize`
