@@ -130,27 +130,37 @@ P0005 is the line: anything that needs a job id is not a recipe); a cache of DCS
   `detail:"full"` adds descriptions and the 4xx responses. `fields` projects the L2/L3 body
   with the same code `execute` uses.
 - `recipe` returns the **filled plan** when `args` is given: `{recipe, about, args{…resolved},
-  calls[], handoff?}`; templates `{owner}`, `{repo}`, `{ref}`, `{path}` filled in path and
-  query; a missing required arg → `400` naming it, with the arg's `about`.
+  calls[], handoff?}`; templates `{owner}`, `{repo}`, `{ref}`, `{path}` (also `{lang}`,
+  `{stage}`, `{limit}`, `{sha}`) filled in path and query, a template that fills to an
+  integer/boolean keeps that type in `query`; a missing required arg → `400` `{error, arg,
+  about, args}` naming it with the arg's `about`; an arg with a `pattern` (a sha must be 40-hex)
+  is shape-checked, never fetched; args with a `default` may be omitted. No recipe hard-codes a
+  repo (v2.4).
 - `docs({rung:"recipes"})` → every recipe's `about` and `args` schema, no calls. `docs()` L0 lists
   recipe names and the `upstream.swagger` pin.
 - Recipes v2: v1's five, plus `map-this-release` (catalog entry → `commit_sha` + `zipball_url`
   → cartographer hand-off), `read-file-at-pin` (`/repos/{owner}/{repo}/contents/{path}?ref={sha}`),
   `my-spend` (a `telemetry` call: bytes and calls for this `consumer_label` since `{since}`).
 
-## `execute` v2 — `{ method, path, query?, fields?, headers?, continue?, pin?, recipe?, args?, dry_run?, confirm?, body? }`
-- **One call** (v1 shape) unchanged. Adds `pin:{sha}` on `/repos/*` and archive paths: the
-  server sets `ref=<sha>` (query) or `{ref}` (path) to the sha; the echoed `request` shows the
-  rewrite; no upstream call is spent to obtain a sha.
+## `execute` v2 — `{ method?, path?, query?, fields?, headers?, continue?, pin?, recipe?, args?, dry_run?, confirm?, body? }`
+- **One call** (v1 shape) unchanged; `method` and `path` are required for it and optional on the
+  schema only so the recipe form (`{recipe, args, dry_run}`) can omit them (v2.4 recut). Adds
+  `pin:{sha}` on `/repos/*` and archive paths: the server sets `ref=<sha>` (query, set or
+  overridden) or `{ref}` (archive path) to the sha; the echoed `request` shows the rewrite and
+  carries `pin`; a `pin.sha` that is not 40-hex, or a path with no ref → 400, nothing sent; no
+  upstream call is ever spent to obtain a sha.
 - **Recipe run:** `{recipe, args}` runs the filled plan in order as the user. Answer: `status`
   = the last step's status (or the failing step's), `body.steps[]` = one envelope per step in
   order, `body.handoff` if the recipe ends in one, `cost` = the sum. Bounds: ≤ 5 steps; 200 KB
   total after projection; on a step ≥ 400 or the cap, stop — `truncated:true`, `continue` =
   `{recipe, args, from:<k>, …}` pre-formed. One telemetry row per step, plus one for the run
   (`event_type: recipe_run`, `path_family: other`).
-- **`dry_run:true`:** the filled plan and `body.estimate` — `{bytes, calls, basis}` where
-  `basis` names the source (`"telemetry p50 bytes_out by path_family, last 30d, this host"`)
-  or `estimate:null` with `basis:"no history"`. **Zero upstream fetches** (test asserts).
+- **`dry_run:true`:** `body.plan` (the filled plan) and `body.estimate` — `{bytes, calls, basis}`
+  where `basis` names the source (`"telemetry p50 bytes_out by path_family, last 30d, this host"`;
+  p50 over `execute` rows with `status < 400`, newest 5,000, median per family) or
+  `estimate:null` with `body.basis:"no history"` (`"no history for <family>"` when some families
+  have rows). **Zero upstream fetches**, and no grant is needed (test asserts). Until v2.5
+  lands, `{recipe, args}` without `dry_run` answers `501` with the plan (v2.4 recut).
 - **Teaching on 200** (rule: never an extra upstream call): `fields` naming a key the swagger's
   response schema lacks → hint; `ref` that is a branch name → hint "moving ref; pin with
   `pin:{sha}`"; `x-total-count` and `ratelimit` surfaced; etag surfaced.

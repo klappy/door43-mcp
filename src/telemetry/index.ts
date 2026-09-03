@@ -102,3 +102,16 @@ export function isReadOnlySql(sql: string): { ok: true } | { ok: false; reason: 
   if (m) return { ok: false, reason: `'${m[1].toUpperCase()}' is not allowed — telemetry is read-only` };
   return { ok: true };
 }
+
+/** v2.4 estimate basis: p50 `bytes_out` per `path_family` for `execute` calls in the last `days` (default 30),
+ *  this deployment only (the table IS this host). Median is taken here — D1/SQLite has no percentile function.
+ *  Bounded read: newest 5,000 rows. A family with no rows is absent from the result (the caller says "no history"). */
+export async function p50BytesByFamily(db: TelemetryDb, days = 30, now = new Date()): Promise<Partial<Record<PathFamily, number>>> {
+  const since = new Date(now.getTime() - days * 86_400_000).toISOString();
+  const res = await db.prepare(`SELECT path_family, bytes_out FROM ${TABLE} WHERE tool_name = 'execute' AND event_type = 'tool_call' AND status < 400 AND timestamp > ? ORDER BY timestamp DESC LIMIT 5000`).bind(since).all<{ path_family: string; bytes_out: number }>();
+  const by: Record<string, number[]> = {};
+  for (const r of res.results ?? []) (by[r.path_family] ??= []).push(Number(r.bytes_out));
+  const out: Partial<Record<PathFamily, number>> = {};
+  for (const [f, xs] of Object.entries(by)) { xs.sort((a, b) => a - b); const m = xs.length >> 1; out[f as PathFamily] = xs.length % 2 ? xs[m] : Math.round((xs[m - 1] + xs[m]) / 2); }
+  return out;
+}

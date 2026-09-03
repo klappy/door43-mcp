@@ -87,9 +87,10 @@ describe("docs L1/L2/L3/query (SPEC §docs)", () => {
 });
 
 describe("docs recipes", () => {
-  it("ships the five named recipes; latest-release-zip selects zipball_url", async () => {
-    expect(Object.keys(RECIPES)).toEqual(["whoami", "catalog-by-language", "latest-release-zip", "repo-tree-at-ref", "page-through"]);
-    const e = await runDocs(deps(), { recipe: "latest-release-zip" });
+  it("ships v1's five recipes (+ read-file-at-pin, SPEC §docs v2); latest-release-zip selects zipball_url", async () => {
+    expect(Object.keys(RECIPES)).toEqual(["whoami", "catalog-by-language", "latest-release-zip", "repo-tree-at-ref", "page-through", "read-file-at-pin"]);
+    // v2.4: owner/repo are args, no longer hard-coded (DELTA seed 4) — see test/v2-pins-recipe-args.test.ts for the 400.
+    const e = await runDocs(deps(), { recipe: "latest-release-zip", args: { owner: "unfoldingWord", repo: "en_ult" } });
     expect(e.status).toBe(200);
     const call = (e.body as any).calls[0];
     expect(call.method).toBe("GET");
@@ -99,6 +100,8 @@ describe("docs recipes", () => {
   });
   it("every recipe call is a GET/HEAD execute call the edge would accept", () => {
     for (const r of Object.values(RECIPES)) for (const c of r.calls) { expect(["GET", "HEAD"]).toContain(c.method); expect(c.path.startsWith("/")).toBe(true); expect(c.path).not.toMatch(/[?#]/); }
+    // templates only in a filled position; every template names a declared arg.
+    for (const [n, r] of Object.entries(RECIPES)) for (const c of r.calls) for (const m of `${c.path} ${JSON.stringify(c.query ?? {})}`.matchAll(/\{([a-zA-Z_]+)\}/g)) expect(Object.keys(r.args), `${n} template {${m[1]}}`).toContain(m[1]);
   });
 });
 

@@ -119,6 +119,7 @@ missing, answered here so the plan carries them:
   prose; partial), oddkit (`server_time`, no `next`), AMS (`next_after` cursors — the
   counter-case: raw cursors). Two instances and two half-instances; a pattern, not yet a
   principle. The L1 items are proposals for that reason.
+- **Retraction re-check (2026-09-03T20:16Z, v2.3/v2.4 cook).** Seed 2 (pins without fetch): holds — no code path fetches `git/refs`; the condition (cartographer hand-offs drifting on stale `commit_sha`) cannot fire before v2.6 ships a hand-off, so it is re-checked there. Seed 4 (`dry_run`, named basis): holds — `basis` is a string on every answer; the live table has few `execute` rows today, so most dry runs answer `no history` until the host is used; that is the condition working, not failing.
 - **Retraction conditions.** Compact-by-default L2 (v2.1): retract if an agent asks for
   `detail:"full"` on more than half of L2 calls in a week of telemetry. Pins without fetch
   (v2.3): retract if cartographer hand-offs still drift because `commit_sha` is stale vs the
