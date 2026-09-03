@@ -7,6 +7,8 @@
   "observability": { "enabled": true },
   // Custom domain: wrangler creates the DNS record on deploy (route bound to the host).
   "routes": [{ "pattern": "door43.klappy.dev", "custom_domain": true }],
+  // No branch preview URLs: Cloudflare does not generate preview URLs for Durable Object Workers (McpAgent is one) — observed 2026-09-03, versions 556a073e/196ab572 has_preview:false. Taste = screenshots in the PR, then prod after merge.
+  "workers_dev": false,
   // Provider state: hashed OAuth grants + per-grant encrypted props (SPEC §Stack).
   "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "a9311ccc415a417f894a0d666362977c" }],
   // Telemetry exact channel (ticket 2026-09-02-door43-mcp-gate2-3): the ONE D1 created by CoS 02:32Z. Bind, never create another.
@@ -15,5 +17,7 @@
   "durable_objects": { "bindings": [{ "name": "MCP_OBJECT", "class_name": "Door43MCP" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Door43MCP"] }],
   // Secrets (Worker secrets only, never here): D43_CLIENT_ID, D43_CLIENT_SECRET, COOKIE_ENCRYPTION_KEY.
-  "vars": { "D43_HOST": "git.door43.org" }
+  "vars": { "D43_HOST": "git.door43.org" },
+  // docs/SURFACE.md is imported as text by src/surface.ts (the homepage copy). vitest does the same via its plugin.
+  "rules": [{ "type": "Text", "globs": ["**/*.md"], "fallthrough": true }]
 }

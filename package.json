@@ -8,7 +8,8 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "docs": "vite-node -c vitest.config.ts scripts/docs.ts"
   },
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "^0.7.2",
