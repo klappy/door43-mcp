@@ -21,5 +21,4 @@
 - T10 **Door without a deploy credential.** GitHub-write + no CF token = a door that can build but not fly
   (same shape as the 2026-08-31 read-only-door finding). Either seats carry a scoped 1h CF token, or deploy rides
   Workers Builds on push. (Observed 2026-09-02.)
-- T11 **Convention cited as merged, file says proposed.** `health-code/mcp-server-build-convention.md` L3 still reads
-  `Status: proposed`; it is on kitchen main. Recut the header or the citations.
+- T11 ~~Convention cited as merged, file says proposed.~~ **Closed 2026-09-03.** Header recut in kitchen#69: `Status: law (merged 2026-09-02)`. Seat miss: read a stale zoom, not the head.
