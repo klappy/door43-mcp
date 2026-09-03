@@ -97,6 +97,8 @@ export function fieldsTeach(body: unknown, fields: string[] | undefined): string
         else nextNodes.push(v);
       }
       if (!nextNodes.length) break;
+      // Partial misses on this segment are not "selected nothing" if any node survived.
+      dead = null; leaf = null;
       nodes = nextNodes;
       const objs = nodes.filter((n): n is object => n !== null && typeof n === "object");
       if (objs.length) keysHere = [...new Set(objs.flatMap((o) => Object.keys(o)))];

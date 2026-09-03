@@ -170,6 +170,9 @@ describe("v2.2 — teaching on 200 costs zero fetches", () => {
     expect(fieldsTeach({ a: { b: 1 } }, ["a.c"])).toHaveLength(1);
     expect(fieldsTeach({ a: { b: 1 } }, ["a.b"])).toHaveLength(0);
     expect(fieldsTeach("text", ["a"])).toHaveLength(0);
+    // Heterogeneous array: some items have the key — selector resolved; no "selected nothing".
+    expect(fieldsTeach({ data: [{ extra: 1 }, { name: "b" }] }, ["data[].extra"])).toHaveLength(0);
+    expect(fieldsTeach({ data: [{ name: "a" }, { name: "b" }] }, ["data[].extra"])).toHaveLength(1);
   });
 });
 
