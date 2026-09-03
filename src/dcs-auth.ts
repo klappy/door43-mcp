@@ -73,14 +73,27 @@ export const DcsAuthHandler = {
         const shown = JSON.stringify({ error: err.error, error_description: err.error_description, raw: err.raw }, null, 2);
         return html(`<h2>DCS token exchange failed (${tok.status}).</h2><pre>${shown.replace(/</g, "&lt;")}</pre><p>observed_at ${new Date().toISOString()} · sent: grant_type=authorization_code, redirect_uri=${url.origin}/callback, code_verifier present, client_secret present (${env.D43_CLIENT_SECRET.length} chars)</p>`, 502);
       }
-      const t = await tok.json<{ access_token: string; refresh_token?: string; expires_in?: number; token_type?: string }>();
+      const tokText = await tok.text();
+      let t: { access_token: string; refresh_token?: string; expires_in?: number; token_type?: string };
+      try { t = JSON.parse(tokText); } catch {
+        return html(`<h2>DCS token endpoint returned non-JSON (${tok.status}, ${tok.headers.get("content-type")}).</h2><pre>${tokText.slice(0, 200).replace(/</g, "&lt;")}</pre>`, 502);
+      }
 
-      const ui = await fetch(`${base}/login/oauth/userinfo`, { headers: { authorization: `Bearer ${t.access_token}` } });
-      if (!ui.ok) return html(`<h2>DCS userinfo failed (${ui.status}).</h2>`, 502);
-      const u = await ui.json<{ sub: string; preferred_username?: string; name?: string }>();
-
+      // Gate 0 observation: does the DCS OAuth access token authorize /api/v1/user with `Authorization: token`?
+      const t0 = Date.now();
+      const me = await fetch(`${base}/api/v1/user`, { headers: { authorization: `token ${t.access_token}`, accept: "application/json" } });
+      const upstream_ms = Date.now() - t0;
+      const meText = await me.text();
+      let u: { id?: number; login?: string; sub?: string } = {};
+      try { u = JSON.parse(meText); } catch { /* non-JSON handled below */ }
+      const observed = { observed_at: new Date().toISOString(), header_shape: "Authorization: token <access>", status: me.status, content_type: me.headers.get("content-type"), login: u.login ?? null, expires_in_s: t.expires_in ?? null, has_refresh: Boolean(t.refresh_token), token_type: t.token_type ?? null, upstream_ms };
+      if (me.status !== 200 || !u.login) {
+        // STOP condition (ticket): record exactly, no PAT fallback. Body is DCS's, not ours.
+        return html(`<h2>Gate 0 STOP — GET /api/v1/user did not return the user.</h2><pre>${JSON.stringify(observed, null, 2)}</pre><pre>${meText.slice(0, 300).replace(/</g, "&lt;")}</pre>`, 502);
+      }
+      u.sub = String(u.id);
       const props: GrantProps = {
-        sub: u.sub, login: u.preferred_username ?? u.name ?? u.sub,
+        sub: u.sub, login: u.login,
         accessToken: t.access_token, refreshToken: t.refresh_token,
         expiresIn: t.expires_in, expiresAt: t.expires_in ? Date.now() + t.expires_in * 1000 : undefined,
       };
@@ -88,7 +101,8 @@ export const DcsAuthHandler = {
         request: sealed.req, userId: u.sub, metadata: { login: props.login },
         scope: sealed.req.scope, props,
       });
-      return Response.redirect(redirectTo, 302);
+      // Show the observation once, then hand the code to the client.
+      return html(`<h2>Gate 0 observed — logged in as <b>${u.login}</b>.</h2><pre>${JSON.stringify(observed, null, 2)}</pre><p><a href="${redirectTo}">Continue to client</a> (localhost will not load; copy the <code>code=</code> from that link).</p>`);
     }
 
     if (url.pathname === "/") {
