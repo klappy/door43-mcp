@@ -8,7 +8,7 @@ made are listed at the end. Nothing here is built. `src/` is untouched.
 
 ## The tower — the system as one thing (≤ 300 words)
 
-An agent using this server touches exactly four shapes, and every tool speaks all four:
+An agent touches exactly four shapes here, and every tool speaks all four:
 
 1. **The envelope.** Every answer is `{observed_at, upstream, request, status, body,
    truncated, next, continue, hints, cost}` — the only thing the agent reads; a dead
@@ -24,19 +24,18 @@ An agent using this server touches exactly four shapes, and every tool speaks al
 4. **The tally.** `cost` on the envelope equals the telemetry row for the same call.
    "What did I spend" is a `telemetry` SELECT, not a feeling.
 
-One ladder for both tools: **orient → plan → run → resume.** `docs()` orients.
-`docs({recipe, args})` returns a plan. `execute({…, dry_run})` prices it without
-spending. `execute({recipe, args})` runs it — per-step envelopes, one summed tally, a
-failed step returns the remainder as `continue`. `execute({method, path})` is a
-one-step plan.
+One ladder: **orient → plan → run → resume.** `docs()` orients. `docs({recipe, args})`
+returns a plan. `execute({…, dry_run})` prices it without spending. `execute({recipe,
+args})` runs it — per-step envelopes, one summed tally, a failed step returns the rest as
+`continue`. `execute({method, path})` is a one-step plan.
 
-State lives in three places only: the client's envelopes, sealed tokens the server mints
-and does not remember (`continue`, `confirm`), and the Durable Object, which holds the
-grant and nothing about the session (T13). Three tools are the whole surface; breadth
-lives in `execute`'s parameters and in `docs`, per the ceiling.
+State lives in three places: the client's envelopes, sealed tokens the server mints
+and forgets (`continue`, `confirm`), and the Durable Object, which holds the
+grant and nothing about the session (T13). Three read tools plus one write tool (`mutate`, the named
+whole surface; breadth lives in parameters and in `docs`, per the ceiling.
 
-Across the house the four shapes are the shared grammar; each server is a leaf filling
-them from its own upstream. That grammar is L1 work — named below, not written here.
+Across the house the four shapes are the shared grammar; each server fills them from its
+own upstream. That grammar is L1 work — named below, not written here.
 
 ## Seeds — disposition, one reason each
 
@@ -60,12 +59,12 @@ them from its own upstream. That grammar is L1 work — named below, not written
 | **Conditional reads.** | `if-none-match` is already forwarded; nothing surfaces the etag to send back. `upstream.etag` on 200; a 304 returns `status 304, body null, cost.bytes 0`, hint "unchanged". Free bytes on every re-read. | v2.2 |
 | **Rate-limit tally.** | DCS sends `x-ratelimit-*`; the agent cannot see its budget. `upstream.ratelimit{remaining,reset}` when present. | v2.2 |
 | **Path templates + `args`.** | Recipes hard-code `unfoldingWord/en_ult` and say "swap owner/repo". `args` fills `{owner}`/`{repo}`/`{ref}` in paths and queries; an unfilled template is a 400 that names the arg. Same grammar for a one-off `execute` call. | v2.4 |
-| **Writes, progressive protection.** | PRD v2 parks "mutating verbs behind gates" without a shape. Three observed classes: reversible-in-the-UI → one call; destructive-but-undoable → `428` + a `confirm` pre-formed call carrying a sealed token bound to `(method, path, body sha256, sub, expiry)`, replay executes; irreversible → refused, HUMAN-ONLY at the DCS UI. Stateless: the seal is minted, never stored. Last on the plan by ergonomics-per-cost; a separate meal is a fair ruling. (First draft sealed every write; the challenge changed it — see §Challenge.) | v2.8, T17 |
+| **Writes.** | PRD v2 parks "mutating verbs behind gates" without a shape. Pass draft 1: sealed `confirm` on every write inside `execute`; draft 2 (after the challenge): progressive protection. **Captain's ruling on reading the PR (2026-09-03): a fourth tool `mutate`** — MCP consent and OAuth scope are per tool, `execute` stays read-only and its annotation stays true, the client's `destructiveHint` prompt is the mirrored confirmation, the server floor is an observed `refused[]` list. The ceiling's written-reason clause is satisfied in SPEC §`mutate`. The seal survives as an off-by-default belt. | v2.8, T17 |
 | **Consumer label ladder parity.** | `consumer_label` is the grant login (`consumer_source: grant`); oddkit/cartographer read `?consumer=`. Both, with the source named; the grant is verified, the query label is self-declared. | v2.7, T18 |
 
 ## Considered and rejected
 
-- **A fourth tool (`recipe`, `plan`, or `write`).** Ceiling. Breadth is `execute` params.
+- **A fourth tool for `recipe` or `plan`.** Ceiling. Breadth is `execute` params. (A fourth tool for *writes* was rejected by the pass and then admitted by captain ruling with the written reason the ceiling requires — see §Writes and T17; the distinction is consent surface, not breadth.)
 - **Server-side session map** (DO storage keyed by session). The DO holds the grant only;
   a session ledger there is the state the ticket forbids and the thing that dies with the DO.
 - **Session map inside `continue`.** Grows unbounded; a per-truncation token is not a session.
@@ -146,3 +145,14 @@ destructive-but-undoable operations, refusal for irreversible ones. SPEC §v2 `e
 v2.8, and T17 were recut accordingly. The other citations (mode discipline, seeded response,
 substrate-becomes-the-wire) are already honored by the shape of this receipt and did not move
 the plan.
+
+## Captain's ruling on reading the PR — 2026-09-03 (~00:15 ET)
+
+Writes move out of `execute` into a fourth tool, `mutate`, as a named exception to the ceiling.
+Reason recorded in SPEC §`mutate`: MCP consent (`readOnlyHint`/`destructiveHint`) and OAuth scope
+are per tool; a per-call confirmation surface does not exist, so the 428/seal draft was a server
+standing in for the harness. One fourth tool, not one per class — five is the frame error. The
+seal is kept only as an off-by-default belt. Open after the ruling: the observed `refused[]` list
+(captain names it at taste) and whether v2.8 is dish 5 or its own meal. Done-means 5 of the ticket
+("keeps `tools/list` at three") is superseded by this ruling: three under `dcs:read`, four under
+`dcs:write`, the reason cited in `docs()`.

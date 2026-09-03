@@ -94,7 +94,7 @@ present, no dynamic client registration; `AuthorizationHeaderToken` in security 
 
 Everything above this line is v1 and is what `door43.klappy.dev` runs. Everything below is
 the driver's-seat pass (`docs/DELTA.md`) written as contracts. Gates and order: `docs/PLAN.md`
-§v2. Three tools remain; every addition is a parameter, an envelope field, or a recipe.
+§v2. Three read tools remain as they are; one fourth tool (`mutate`) is admitted with a written reason (§`mutate`); every other addition is a parameter, an envelope field, or a recipe.
 
 ## Vodka boundaries, v2
 
@@ -108,7 +108,7 @@ Other users. Other hosts. Resource semantics (T6).
 
 **Is NOT:** a workflow engine (recipes are ≤ 5 straight-line steps, no branching, no jobs —
 P0005 is the line: anything that needs a job id is not a recipe); a cache of DCS content
-(conditional reads, not copies); a second host; a fourth tool.
+(conditional reads, not copies); a second host; a fifth tool.
 
 ## Envelope additions (keys unchanged; objects grow)
 
@@ -153,20 +153,37 @@ P0005 is the line: anything that needs a job id is not a recipe); a cache of DCS
 - **Teaching on 200** (rule: never an extra upstream call): `fields` naming a key the swagger's
   response schema lacks → hint; `ref` that is a branch name → hint "moving ref; pin with
   `pin:{sha}`"; `x-total-count` and `ratelimit` surfaced; etag surfaced.
-- **Writes (phase 2b, gated — T17), progressive protection:** `POST/PUT/PATCH/DELETE` on
-  `/api/v1/*` as the user, in **one call** when the write is reversible by the user in the
-  DCS UI (create/edit issue, comment, label, create branch, create or update a file on a
-  non-default branch, open a PR). A `confirm` seal is demanded (`428` + `body.confirm` =
-  a pre-formed `execute` call) only for the **destructive-but-undoable** class: delete
-  branch/tag/file, close/merge a PR, edit on the default branch. The seal (AES-GCM,
-  `COOKIE_ENCRYPTION_KEY`, `src/seal.ts` pattern) binds `{method, path, sha256(body),
-  sub, exp ≤ 10 min}`; it is not stored and dies at `exp`. The **irreversible** class
-  (repo delete/transfer, force operations, org/user deletion) is refused with `403` and a
-  HUMAN-ONLY hint naming the DCS UI. The three classes are **observed** from the swagger's
-  operations (listed under `refused`/`confirm` in `docs({rung:"map"})`), never guessed.
-  Precedent: E0005.2 session 4 — a two-step propose/commit on every write was ritual;
-  one action, progressive protection. `tools/list` stays three; descriptions change to
-  "read or write, as you".
+- **No writes in `execute`, ever.** It stays `readOnlyHint: true` and its annotation stays true.
+
+## `mutate` v2 — the fourth tool (named exception to the ceiling; captain ruling 2026-09-03)
+`{ method: POST|PUT|PATCH|DELETE, path, query?, body?, headers?, fields? }` → the same envelope.
+Annotations: `readOnlyHint:false, destructiveHint:true, idempotentHint:false, openWorldHint:true`.
+Registered only when the grant carries scope `dcs:write` (`scopesSupported: ["dcs:read","dcs:write"]`);
+a read-only grant never lists it.
+
+**Why `execute` cannot carry it (the written reason the ceiling requires):** MCP consent is
+per tool, not per call — clients decide whether to ask the human from a tool's annotations, and
+`execute` is declared read-only. A write inside `execute` either falsifies that annotation or
+forces a server-side confirmation ritual (the 428/seal draft this replaced) to stand in for a
+consent surface MCP does not have per call. OAuth scope is per tool for the same reason. The
+mirrored confirmation convention §3 asks for is therefore the *client's* prompt on a
+`destructiveHint` tool, backed by the server floor below. First fourth-tool exception in the
+house; the ceiling's retraction clause counts a second server needing one as evidence, so this
+is an exception, not a precedent.
+
+**Server floor (never relies on the client):**
+- Irreversible operations — repo delete/transfer, force operations, org/user deletion —
+  **observed** from the swagger's operations, listed in `docs({rung:"map"})` under `refused[]`,
+  test-pinned → `403`, 0 upstream fetches, hint naming the DCS UI (HUMAN-ONLY).
+- Everything else runs as the user, once; DCS's own 4xx passes through (T2).
+- Optional belt for clients that auto-approve: `confirm_required: true` (Worker var, default
+  off) → destructive-but-undoable operations answer `428` + a pre-formed `mutate` call with a
+  sealed `confirm` (AES-GCM, `COOKIE_ENCRYPTION_KEY`, bound to `{method, path, sha256(body),
+  sub, exp ≤ 10 min}`, never stored). Off by default; the class list rides with `refused[]`.
+- Telemetry: one row, `tool_name: mutate`, `path_family` only — never body, never path.
+
+`tools/list` = 4 when the grant has `dcs:write`, 3 otherwise; `docs()` cites this section as
+the fourth tool's reason (ceiling VERIFICATION).
 
 ## `telemetry` v2
 - No session column, ever (T13). Adds `event_type: recipe_run` and `consumer_source`
