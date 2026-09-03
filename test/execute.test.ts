@@ -126,7 +126,7 @@ describe("next from Link (SPEC: derived from Link / X-Total-Count)", () => {
       link: '<https://git.door43.org/api/v1/catalog/search?q=ult&limit=2&page=2>; rel="next", <https://git.door43.org/api/v1/catalog/search?q=ult&limit=2&page=9>; rel="last"',
       "x-total-count": "17" }));
     const e = await runExecute(d, { method: "GET", path: "/catalog/search", query: { q: "ult", limit: 2 }, fields: ["data[].name"] });
-    expect(e.next).toEqual({ method: "GET", path: "/api/v1/catalog/search", query: { q: "ult", limit: "2", page: "2" }, fields: ["data[].name"] });
+    expect(e.next).toEqual({ method: "GET", path: "/api/v1/catalog/search", query: { q: "ult", limit: 2, page: 2 }, fields: ["data[].name"] }); // typed since v2.2 (SPEC §v2)
     expect(e.hints).toContain("x-total-count 17");
   });
   it("linkNext ignores non-next rels", () => { expect(linkNext('<https://x/y?page=3>; rel="last"')).toBeNull(); });

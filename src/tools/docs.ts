@@ -7,14 +7,15 @@
  * every answer here is built from the cached swagger and the session's own state.
  * SPEC §docs · convention §8 · ceiling VERIFICATION (the pass cites the constraint URI).
  */
-import { envelope, type Envelope, type ExecuteCall } from "../envelope";
+import { envelope, type Envelope, type ExecuteCall, type Upstream } from "../envelope";
+import { project } from "../projection";
 import type { SwaggerDoc, SwaggerOp } from "../upstream";
 
 export const CEILING_URI = "klappy://canon/constraints/mcp-tool-surface-ceiling";
 export const SEAT_WORK_URI = "klappy://canon/constraints/infra-config-is-seat-work";
 export const PASS_CAP_BYTES = 2048;
 
-export interface DocsInput { rung?: "map" | "raw"; path?: string; query?: string; recipe?: string }
+export interface DocsInput { rung?: "map" | "raw"; path?: string; query?: string; recipe?: string; detail?: "compact" | "full"; fields?: string[] }
 export interface DocsDeps {
   host: string;
   version: string;
@@ -64,7 +65,7 @@ export const RECIPES: Record<string, { about: string; calls: ExecuteCall[] }> = 
 };
 
 function request(input: DocsInput) {
-  return { tool: "docs", method: "-", path: input.path ?? "", query: { ...(input.rung ? { rung: input.rung } : {}), ...(input.query ? { query: input.query } : {}), ...(input.recipe ? { recipe: input.recipe } : {}) }, fields: [] as string[] };
+  return { tool: "docs", method: "-", path: input.path ?? "", query: { ...(input.rung ? { rung: input.rung } : {}), ...(input.query ? { query: input.query } : {}), ...(input.recipe ? { recipe: input.recipe } : {}), ...(input.detail ? { detail: input.detail } : {}) }, fields: input.fields ?? [] };
 }
 
 const norm = (p: string) => (p.startsWith("/api/v1") ? p.slice(7) : p) || "/";
@@ -94,16 +95,25 @@ function boardingPass(d: DocsDeps) {
   };
 }
 
-function l2(doc: SwaggerDoc, path: string) {
+function l2(doc: SwaggerDoc, path: string, detail: "compact" | "full" = "compact") {
   const ops = doc.paths[path];
   if (!ops) return null;
   const out: Record<string, unknown> = { path: doc.basePath + path, quirks: QUIRKS[path] ?? [] };
   for (const [m, op] of Object.entries(ops)) {
     if (!["get", "head"].includes(m)) continue;
-    const params = (op.parameters ?? []).map((p) => `${p.name}${p.required ? "*" : ""} (${p.in}${p.type ? ":" + p.type : ""})${p.description ? " — " + p.description : ""}`);
+    // compact (default): every param NAME survives — `q:string`, `owner*:string` — prose does not (SPEC §v2 docs).
+    // full: v1's prose strings, plus the non-200 responses' descriptions.
+    const params = detail === "full"
+      ? (op.parameters ?? []).map((p) => `${p.name}${p.required ? "*" : ""} (${p.in}${p.type ? ":" + p.type : ""})${p.description ? " — " + p.description : ""}`)
+      : (op.parameters ?? []).map((p) => `${p.name}${p.required ? "*" : ""}:${p.type ?? p.in}`);
     const r200 = op.responses?.["200"];
-    out[m.toUpperCase()] = { summary: op.summary ?? "", params, response_keys: responseKeys(doc, r200), responses: Object.keys(op.responses ?? {}),
-      example: { method: m.toUpperCase(), path: doc.basePath + path.replace(/\{[^}]+\}/g, (x) => x) } };
+    const entry: Record<string, unknown> = { summary: op.summary ?? "", params, response_keys: responseKeys(doc, r200), responses: Object.keys(op.responses ?? {}) };
+    if (detail === "full") {
+      entry.description = op.description ?? "";
+      entry.errors = Object.fromEntries(Object.entries(op.responses ?? {}).filter(([c]) => c !== "200").map(([c, r]) => [c, (r as any)?.$ref ? String((deref(doc, (r as any).$ref) as any)?.description ?? (r as any).$ref) : String((r as any)?.description ?? "")]));
+    }
+    entry.example = { method: m.toUpperCase(), path: doc.basePath + path };
+    out[m.toUpperCase()] = entry;
   }
   const others = Object.keys(ops).filter((m) => !["get", "head"].includes(m));
   if (others.length) out.v2 = `${others.map((x) => x.toUpperCase()).join("/")} exist upstream; execute refuses them in v1 (405)`;
@@ -117,15 +127,19 @@ function deref(doc: SwaggerDoc, ref: string | undefined): unknown {
   for (const k of parts.slice(1)) node = node?.[k];
   return node ?? null;
 }
-function responseKeys(doc: SwaggerDoc, r: { $ref?: string; schema?: unknown } | undefined): string[] {
+/** Every key a 200 body can carry, never elided (T16 closed by v2.1). Array-of-object properties list
+ *  ALL item keys as `name[]{k1,k2,…}`; nested objects one level as `name{k1,k2}`. `fields` selects from these. */
+export function responseKeys(doc: SwaggerDoc, r: { $ref?: string; schema?: unknown } | undefined): string[] {
   const resp: any = r?.$ref ? deref(doc, r.$ref) : r;
   let schema: any = resp?.schema;
   if (schema?.$ref) schema = deref(doc, schema.$ref);
-  if (schema?.type === "array" && schema.items) { const it = schema.items.$ref ? deref(doc, schema.items.$ref) : schema.items; return Object.keys((it as any)?.properties ?? {}).map((k) => `[].${k}`); }
+  const itemKeys = (it: any): string[] => { const x = it?.$ref ? deref(doc, it.$ref) : it; return Object.keys((x as any)?.properties ?? {}); };
+  if (schema?.type === "array" && schema.items) return itemKeys(schema.items).map((k) => `[].${k}`);
   const props = schema?.properties ?? {};
   const keys: string[] = [];
   for (const [k, v] of Object.entries<any>(props)) {
-    if (v?.type === "array" && v.items?.$ref) { const it: any = deref(doc, v.items.$ref); keys.push(`${k}[]{${Object.keys(it?.properties ?? {}).slice(0, 12).join(",")}${Object.keys(it?.properties ?? {}).length > 12 ? ",…" : ""}}`); }
+    if (v?.type === "array" && v.items && (v.items.$ref || v.items.properties)) keys.push(`${k}[]{${itemKeys(v.items).join(",")}}`);
+    else if (v?.$ref || v?.properties) { const sub = itemKeys(v); keys.push(sub.length ? `${k}{${sub.join(",")}}` : k); }
     else keys.push(k);
   }
   return keys;
@@ -165,25 +179,30 @@ export async function runDocs(d: DocsDeps, input: DocsInput = {}): Promise<Envel
   const doc = await d.swagger();
   if (!doc) return envelope({ upstream, request: req, status: 503, body: null, hints: ["swagger unavailable and nothing cached; retry, or execute GET /version to test reachability"] });
   hints.push(`swagger ${doc.version ?? "?"} observed ${doc.observed_at}, cached 1h`);
+  const pinned: Upstream = { ...upstream, swagger: { version: doc.version, etag: doc.etag, observed_at: doc.observed_at } };
 
   if (input.query) {
     const hits = searchOps(doc, input.query, 10);
-    return envelope({ upstream, request: req, status: hits.length ? 200 : 404, body: { query: input.query, hits: hits.map((h) => ({ ...h, l2: { docs: { path: norm(h.path) } } })) },
+    return envelope({ upstream: pinned, request: req, status: hits.length ? 200 : 404, body: { query: input.query, hits: hits.map((h) => ({ ...h, l2: { docs: { path: norm(h.path) } } })) },
       hints: hits.length ? [...hints, "each hit's `l2` is the docs call for that path"] : [...hints, "no lexical match; try a path segment (catalog, releases, contents, trees)"] });
   }
   if (input.path) {
     const p = norm(input.path);
     if (!doc.paths[p]) {
       const near = Object.keys(doc.paths).filter((x) => x.includes(p.split("/").filter(Boolean)[0] ?? "\u0000")).slice(0, 5);
-      return envelope({ upstream, request: req, status: 404, body: { path: p, nearest: near.map((x) => doc.basePath + x) }, hints: [...hints, "not a documented path; docs({query}) searches summaries"] });
+      return envelope({ upstream: pinned, request: req, status: 404, body: { path: p, nearest: near.map((x) => doc.basePath + x) }, hints: [...hints, "not a documented path; docs({query}) searches summaries"] });
     }
-    if (input.rung === "raw") return envelope({ upstream, request: req, status: 200, body: { path: doc.basePath + p, swagger: doc.paths[p] }, hints: [...hints, "raw swagger fragment, verbatim; $ref targets live in the upstream document"] });
-    return envelope({ upstream, request: req, status: 200, body: l2(doc, p), hints: [...hints, "params marked * are required; `response_keys` are what `fields` can select"] });
+    // fields on docs: the same `project()` execute uses — selection only, no renames, no defaults (T6).
+    const pick = (b: unknown) => (input.fields?.length ? project(b, input.fields) : b);
+    if (input.rung === "raw") return envelope({ upstream: pinned, request: req, status: 200, body: pick({ path: doc.basePath + p, swagger: doc.paths[p] }), hints: [...hints, "raw swagger fragment, verbatim; $ref targets live in the upstream document"] });
+    const detail = input.detail === "full" ? "full" : "compact";
+    return envelope({ upstream: pinned, request: req, status: 200, body: pick(l2(doc, p, detail)), hints: [...hints,
+      detail === "compact" ? "params are `name*:type` (* = required); `detail:\"full\"` adds descriptions; `response_keys` are complete and are what `fields` can select" : "params marked * are required; `response_keys` are complete and are what `fields` can select"] });
   }
   // rung: map (L1) — families with counts and three most-used paths each.
   const counts: Record<string, number> = {};
   for (const p of Object.keys(doc.paths)) counts[familyOf(p)] = (counts[familyOf(p)] ?? 0) + 1;
   const families = Object.keys(FAMILY_NOTES).map((f) => ({ family: f, paths: counts[f] ?? 0, about: FAMILY_NOTES[f], top: FAMILY_TOP[f].map((x) => doc.basePath + x) }));
-  if (input.rung === "raw") return envelope({ upstream, request: req, status: 400, body: { paths: Object.keys(doc.paths).length }, hints: [...hints, "rung:\"raw\" needs a `path`; this is the map"] });
-  return envelope({ upstream, request: req, status: 200, body: { paths_total: Object.keys(doc.paths).length, families }, hints: [...hints, "descend with docs({path}) on any of the listed paths"] });
+  if (input.rung === "raw") return envelope({ upstream: pinned, request: req, status: 400, body: { paths: Object.keys(doc.paths).length }, hints: [...hints, "rung:\"raw\" needs a `path`; this is the map"] });
+  return envelope({ upstream: pinned, request: req, status: 200, body: { paths_total: Object.keys(doc.paths).length, families }, hints: [...hints, "descend with docs({path}) on any of the listed paths"] });
 }

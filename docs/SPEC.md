@@ -124,7 +124,8 @@ P0005 is the line: anything that needs a job id is not a recipe); a cache of DCS
   `body.steps[]` (each an envelope), `body.plan`, `body.estimate`, `body.handoff`.
 
 ## `docs` v2 — `{ rung?, path?, query?, recipe?, args?, detail?, fields? }`
-- `path` L2 returns **compact** by default: `params[]` as `{name, in, type, required}`;
+- `path` L2 returns **compact** by default: `params[]` as `name*:type` strings (* = required; `in`
+  implicit — objects cost ~1.9 KB on `/catalog/search` alone, over the 2 KB line; v2.1 recut);
   `response_keys[]` **complete** (never elided); `quirks[]`; `v2` verbs present upstream.
   `detail:"full"` adds descriptions and the 4xx responses. `fields` projects the L2/L3 body
   with the same code `execute` uses.

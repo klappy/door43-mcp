@@ -12,9 +12,21 @@ export interface ExecuteCall {
   continue?: string;
 }
 
+/** SPEC §v2 "Envelope additions": keys unchanged; the `upstream` object grows. All additions optional/null. */
+export interface Upstream {
+  host: string;
+  version: string | null;
+  /** docs L1–L3 (and any execute that read the index): the swagger pin the answer was built from. */
+  swagger?: { version: string | null; etag: string | null; observed_at: string };
+  /** execute 200/304: DCS's etag when it sent one (observed 2026-09-03: DCS 1.27.2+dcs sends none). */
+  etag?: string | null;
+  /** execute: `{remaining, reset}` when DCS sent x-ratelimit-* (observed 2026-09-03: none sent). */
+  ratelimit?: { remaining: number; reset: string } | null;
+}
+
 export interface Envelope {
   observed_at: string;
-  upstream: { host: string; version: string | null };
+  upstream: Upstream;
   request: { tool: string; method: string; path: string; query: Record<string, unknown>; fields: string[] };
   status: number;
   body: unknown;

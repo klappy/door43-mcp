@@ -72,6 +72,8 @@ export class Door43MCP extends McpAgent<Env, Record<string, never>, GrantProps> 
           path: z.string().optional().describe("L2: one documented path, e.g. /catalog/search"),
           query: z.string().optional().describe("Lexical search over path names + summaries"),
           recipe: z.string().optional().describe("whoami · catalog-by-language · latest-release-zip · repo-tree-at-ref · page-through"),
+          detail: z.enum(["compact", "full"]).optional().describe("L2 only: compact (default) = names and types; full = descriptions + error responses"),
+          fields: z.array(z.string()).optional().describe("Project the L2/L3 body, same selectors as execute"),
         },
       },
       async (input) => {

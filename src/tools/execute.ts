@@ -7,7 +7,7 @@
  * The core is `runExecute(deps, input)` so tests drive it with an injected fetch and
  * assert what reached the upstream (write-leak and 405 tests assert *no* fetch).
  */
-import { envelope, byteLength, type Envelope, type ExecuteCall } from "../envelope";
+import { envelope, byteLength, type Envelope, type ExecuteCall, type Upstream } from "../envelope";
 import { project } from "../projection";
 import { capBody, readContinue } from "../cap";
 import { linkNext, nearestPaths } from "../upstream";
@@ -60,9 +60,59 @@ export function resolvePath(host: string, method: "GET" | "HEAD", path: string):
   return { url: new URL(`https://${host}${full}`), kind: "api" };
 }
 
+/** `next.query` keeps the caller's value types (SPEC §v2): a key the caller sent keeps the caller's type;
+ *  a key the upstream added (`page`) is typed by its shape — integer string → number, true/false → boolean. */
+export function typedQuery(fromLink: URLSearchParams, callerQuery: Record<string, string | number | boolean> | undefined): Record<string, string | number | boolean> {
+  const out: Record<string, string | number | boolean> = {};
+  for (const [k, v] of fromLink.entries()) {
+    const was = callerQuery?.[k];
+    if (typeof was === "number") out[k] = Number(v);
+    else if (typeof was === "boolean") out[k] = v === "true";
+    else if (typeof was === "string") out[k] = v;
+    else if (/^-?\d+$/.test(v)) out[k] = Number(v);
+    else if (v === "true" || v === "false") out[k] = v === "true";
+    else out[k] = v;
+  }
+  return out;
+}
+
+/** Teaching on 200, from the response only (never a fetch): a `fields` selector that resolved to nothing
+ *  names the keys that exist at that level. `data[].owner.login` → "owner is a string; keys at data[]: …". */
+export function fieldsTeach(body: unknown, fields: string[] | undefined): string[] {
+  if (!fields?.length || body === null || typeof body !== "object") return [];
+  const out: string[] = [];
+  for (const f of fields) {
+    const segs = f.split(".").filter(Boolean);
+    let nodes: unknown[] = [body];
+    let keysHere: string[] = Object.keys(body as object);
+    let dead: string | null = null; let leaf: string | null = null;
+    for (const seg of segs) {
+      const arr = seg.endsWith("[]"); const key = arr ? seg.slice(0, -2) : seg;
+      const nextNodes: unknown[] = [];
+      for (const n of nodes) {
+        if (n === null || typeof n !== "object") { dead = seg; leaf = n === null ? "null" : typeof n; continue; }
+        const v = key ? (n as any)[key] : n;
+        if (v === undefined) { dead = seg; continue; }
+        if (arr) { if (Array.isArray(v)) nextNodes.push(...v); else dead = seg; }
+        else nextNodes.push(v);
+      }
+      if (!nextNodes.length) break;
+      nodes = nextNodes;
+      const objs = nodes.filter((n): n is object => n !== null && typeof n === "object");
+      if (objs.length) keysHere = [...new Set(objs.flatMap((o) => Object.keys(o)))];
+    }
+    if (dead) {
+      out.push(`fields '${f}' selected nothing: '${dead}' is not a key here${leaf ? ` (the value before it is a ${leaf})` : ""}; keys at this level: ${keysHere.slice(0, 20).join(", ")}${keysHere.length > 20 ? ", …" : ""}`);
+    }
+  }
+  return out;
+}
+
+const SHA40 = /^[0-9a-f]{40}$/i;
+
 export async function runExecute(deps: ExecuteDeps, input: ExecuteInput): Promise<Envelope> {
   const req = requestEcho(input);
-  const upstream = { host: deps.host, version: deps.version };
+  const upstream: Upstream = { host: deps.host, version: deps.version };
   const method = req.method;
 
   if (method !== "GET" && method !== "HEAD") {
@@ -101,6 +151,17 @@ export async function runExecute(deps: ExecuteDeps, input: ExecuteInput): Promis
       hints: [`grant expired; re-login at ${deps.loginUrl ?? "/authorize"}`], cost: { bytes: 0, tokens_est: 0, upstream_ms: ms } });
   }
 
+  // SPEC §v2 envelope additions: surface what DCS sent, null when it sent nothing (observed 2026-09-03: nothing).
+  upstream.etag = r.headers.get("etag");
+  const rlRem = r.headers.get("x-ratelimit-remaining"), rlReset = r.headers.get("x-ratelimit-reset");
+  upstream.ratelimit = rlRem !== null ? { remaining: Number(rlRem), reset: rlReset ? (/^\d+$/.test(rlReset) ? new Date(Number(rlReset) * 1000).toISOString() : rlReset) : "" } : null;
+  if (upstream.ratelimit) hints.push(`ratelimit: ${upstream.ratelimit.remaining} remaining${upstream.ratelimit.reset ? `, resets ${upstream.ratelimit.reset}` : ""}`);
+
+  // 304 is a first-class answer (SPEC §v2): nothing moved, nothing paid.
+  if (r.status === 304) {
+    return envelope({ upstream, request: req, status: 304, body: null, hints: [...hints, `unchanged since ${upstream.etag ?? headers["if-none-match"] ?? "the etag you sent"}`], cost: { bytes: 0, tokens_est: 0, upstream_ms: ms } });
+  }
+
   // Archive: HEAD → resolved URL (redirect target or the URL itself).
   if (resolved.kind === "archive") {
     const loc = r.headers.get("location");
@@ -127,9 +188,14 @@ export async function runExecute(deps: ExecuteDeps, input: ExecuteInput): Promis
   // next: pre-formed execute call from Link rel=next (SPEC: derived from Link / X-Total-Count).
   let next: ExecuteCall | null = null;
   const ln = linkNext(r.headers.get("link"));
-  if (ln) next = { method: method as "GET" | "HEAD", path: ln.pathname, query: Object.fromEntries(ln.searchParams.entries()), ...(input.fields?.length ? { fields: input.fields } : {}) };
+  if (ln) next = { method: method as "GET" | "HEAD", path: ln.pathname, query: typedQuery(ln.searchParams, input.query), ...(input.fields?.length ? { fields: input.fields } : {}) };
   const total = r.headers.get("x-total-count");
   if (total) hints.push(`x-total-count ${total}`);
+  if (upstream.etag) hints.push(`etag ${upstream.etag}; send headers:{"if-none-match":…} to get 304 for free`);
+  // Teaching on 200 — from the request and the response only; never an extra upstream call.
+  hints.push(...fieldsTeach(body, input.fields));
+  const ref = input.query?.ref;
+  if (typeof ref === "string" && ref && !SHA40.test(ref)) hints.push(`ref '${ref}' is a moving ref; the same call tomorrow may answer differently — pin to a sha`);
 
   // fields → cap → continue.
   const projected = project(body, input.fields);
