@@ -7,6 +7,10 @@
   "observability": { "enabled": true },
   // Custom domain: wrangler creates the DNS record on deploy (route bound to the host).
   "routes": [{ "pattern": "door43.klappy.dev", "custom_domain": true }],
+  // Branch tasting: workers.dev route stays OFF; preview URLs ON (wrangler ≥4.44 otherwise resets them to match workers.dev on every upload).
+  // Non-main builds run `versions upload --preview-alias <branch>` → https://<branch>-door43-mcp.klappy.workers.dev (observed 2026-09-03; CF "Worker Previews"/`wrangler preview` is gated on this account, error 10015).
+  "workers_dev": false,
+  "preview_urls": true,
   // Provider state: hashed OAuth grants + per-grant encrypted props (SPEC §Stack).
   "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "a9311ccc415a417f894a0d666362977c" }],
   // Telemetry exact channel (ticket 2026-09-02-door43-mcp-gate2-3): the ONE D1 created by CoS 02:32Z. Bind, never create another.
