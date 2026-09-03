@@ -8,6 +8,7 @@
 import OAuthProvider, { OAuthError } from "@cloudflare/workers-oauth-provider";
 import { DcsAuthHandler } from "./dcs-auth";
 import { Door43MCP } from "./mcp";
+import { loadLatestGrant, saveLatestGrant } from "./grant";
 import { refreshDcs } from "./upstream";
 import type { Env, GrantProps } from "./types";
 
@@ -24,13 +25,17 @@ const provider = new OAuthProvider({
   tokenExchangeCallback: async (o) => {
     if (o.grantType !== "refresh_token") return;
     const props = o.props as GrantProps;
-    if (!props?.refreshToken) return;
     const env = (globalThis as any).__door43Env as Env | undefined;
     if (!env) return; // set by fetch() below; absent only in tests
-    const t = await refreshDcs(env.D43_HOST, env.D43_CLIENT_ID, env.D43_CLIENT_SECRET, props.refreshToken);
+    const latest = props?.sub ? await loadLatestGrant(env, props.sub) : null;
+    const refreshToken = latest?.refreshToken ?? props?.refreshToken;
+    if (!refreshToken) return;
+    const t = await refreshDcs(env.D43_HOST, env.D43_CLIENT_ID, env.D43_CLIENT_SECRET, refreshToken);
     if (!t) throw new OAuthError("invalid_grant", { description: "upstream DCS refresh failed; re-login" });
-    const newProps: GrantProps = { ...props, accessToken: t.access_token, refreshToken: t.refresh_token ?? props.refreshToken,
-      expiresIn: t.expires_in, expiresAt: t.expires_in ? Date.now() + t.expires_in * 1000 : undefined };
+    const now = Date.now();
+    const newProps: GrantProps = { ...props, accessToken: t.access_token, refreshToken: t.refresh_token ?? refreshToken,
+      expiresIn: t.expires_in, expiresAt: t.expires_in ? now + t.expires_in * 1000 : undefined };
+    if (props?.sub) await saveLatestGrant(env, { accessToken: newProps.accessToken, refreshToken: newProps.refreshToken, sub: props.sub, at: now });
     return { newProps };
   },
 });

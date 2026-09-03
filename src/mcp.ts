@@ -9,6 +9,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Env, GrantProps } from "./types";
 import { runExecute, VERSION, type Grant } from "./tools/execute";
+import { loadLatestGrant, newerStored, saveLatestGrant, selectGrant, type StoredGrant } from "./grant";
 import { refreshDcs, swaggerPaths, upstreamVersion } from "./upstream";
 
 export { VERSION };
@@ -18,15 +19,15 @@ const STORE_KEY = "grant:refreshed";
 export class Door43MCP extends McpAgent<Env, Record<string, never>, GrantProps> {
   server = new McpServer({ name: "door43-mcp", version: VERSION });
 
-  /** The provider's props are per-token; a refresh done inside `execute` is kept in this
-   *  Durable Object's storage so later calls on the same session reuse it. The durable
-   *  path is the provider's `tokenExchangeCallback` (src/index.ts) on the client's own refresh. */
+  /** Latest DCS grant: in-`execute` refresh (DO + sealed KV) vs provider props.
+   *  Recency wins so a later `/token` refresh is not stuck behind a stale store.
+   *  tokenExchangeCallback (src/index.ts) reads the same KV key after rotation. */
   private async currentGrant(): Promise<Grant | null> {
     const p = this.props;
     if (!p?.accessToken) return null;
-    const stored = await this.ctx.storage.get<Grant & { sub: string }>(STORE_KEY);
-    if (stored && stored.sub === p.sub) return { accessToken: stored.accessToken, refreshToken: stored.refreshToken ?? p.refreshToken };
-    return { accessToken: p.accessToken, refreshToken: p.refreshToken };
+    const local = await this.ctx.storage.get<StoredGrant>(STORE_KEY);
+    const kv = p.sub ? await loadLatestGrant(this.env, p.sub) : null;
+    return selectGrant(p, newerStored(local, kv));
   }
 
   async init() {
@@ -68,9 +69,13 @@ export class Door43MCP extends McpAgent<Env, Record<string, never>, GrantProps> 
               if (!g.refreshToken) return null;
               const t = await refreshDcs(host, env.D43_CLIENT_ID, env.D43_CLIENT_SECRET, g.refreshToken);
               if (!t) return null;
-              const fresh: Grant = { accessToken: t.access_token, refreshToken: t.refresh_token ?? g.refreshToken };
-              await this.ctx.storage.put(STORE_KEY, { ...fresh, sub: this.props?.sub ?? "" });
-              return fresh;
+              const fresh: StoredGrant = {
+                accessToken: t.access_token, refreshToken: t.refresh_token ?? g.refreshToken,
+                sub: this.props?.sub ?? "", at: Date.now(),
+              };
+              await this.ctx.storage.put(STORE_KEY, fresh);
+              await saveLatestGrant(env, fresh);
+              return { accessToken: fresh.accessToken, refreshToken: fresh.refreshToken };
             },
           },
           input,

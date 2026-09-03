@@ -17,14 +17,28 @@ export function readContinue(token: string | undefined): ContinueToken | null {
   catch { return null; }
 }
 
+/** Exclusive end index that does not split a UTF-8 character. */
+function utf8End(bytes: Uint8Array, start: number, end: number): number {
+  if (end >= bytes.length) return bytes.length;
+  let i = end;
+  while (i > start && (bytes[i] & 0xc0) === 0x80) i--;
+  if (i === start && end < bytes.length) {
+    const b = bytes[start];
+    const n = b < 0x80 ? 1 : b < 0xe0 ? 2 : b < 0xf0 ? 3 : 4;
+    return Math.min(bytes.length, start + n);
+  }
+  return i;
+}
+
 /**
  * Slice a serialized body at `offset`. Returns the slice, whether more remains,
  * and the pre-formed call that fetches the rest (same call + continue token).
+ * Cuts land on UTF-8 character boundaries so concatenating slices reproduces the body.
  */
 export function capBody(serialized: string, offset: number, call: Omit<ExecuteCall, "continue">, cap = BODY_CAP_BYTES) {
   const all = enc.encode(serialized);
-  const slice = all.subarray(offset, offset + cap);
-  const end = offset + slice.length;
+  const end = utf8End(all, offset, Math.min(all.length, offset + cap));
+  const slice = all.subarray(offset, end);
   const truncated = end < all.length;
   return {
     text: dec.decode(slice),

@@ -47,16 +47,42 @@ function requestEcho(input: ExecuteInput) {
   return { tool: "execute", method: input.method.toUpperCase(), path: input.path, query: input.query ?? {}, fields: input.fields ?? [] };
 }
 
+const PATH_REFUSE = "path may not contain '?', '#', '..' or '//' — put parameters in `query`";
+
+function unsafePath(p: string): boolean {
+  return /[?#]/.test(p) || p.includes("..") || p.includes("//");
+}
+
+/** Fully decode percent-encoding so `%2e%2e` / `%252e` cannot hide `..`. */
+function decodePath(path: string): string {
+  let cur = path;
+  for (let i = 0; i < 5; i++) {
+    let next: string;
+    try { next = decodeURIComponent(cur); } catch { return cur; }
+    if (next === cur) return cur;
+    cur = next;
+  }
+  return cur;
+}
+
 /** Resolve the caller's path to an upstream URL, or return the reason it is refused. */
 export function resolvePath(host: string, method: "GET" | "HEAD", path: string): { url: URL; kind: "api" | "archive" } | { refuse: string } {
   if (typeof path !== "string" || !path.startsWith("/")) return { refuse: "path must start with '/'" };
-  if (/[?#]/.test(path) || path.includes("..") || path.includes("//")) return { refuse: "path may not contain '?', '#', '..' or '//' — put parameters in `query`" };
+  if (unsafePath(path) || unsafePath(decodePath(path))) return { refuse: PATH_REFUSE };
   if (ARCHIVE.test(path)) {
     if (method !== "HEAD") return { refuse: "archive paths are HEAD only; body.url carries the resolved URL" };
-    return { url: new URL(`https://${host}${path}`), kind: "archive" };
+    try {
+      const url = new URL(`https://${host}${path}`);
+      if (!ARCHIVE.test(url.pathname)) return { refuse: PATH_REFUSE };
+      return { url, kind: "archive" };
+    } catch { return { refuse: PATH_REFUSE }; }
   }
   const full = path.startsWith(API + "/") || path === API ? path : API + path;
-  return { url: new URL(`https://${host}${full}`), kind: "api" };
+  try {
+    const url = new URL(`https://${host}${full}`);
+    if (url.pathname !== API && !url.pathname.startsWith(API + "/")) return { refuse: PATH_REFUSE };
+    return { url, kind: "api" };
+  } catch { return { refuse: PATH_REFUSE }; }
 }
 
 export async function runExecute(deps: ExecuteDeps, input: ExecuteInput): Promise<Envelope> {

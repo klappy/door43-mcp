@@ -4,6 +4,7 @@ import { ENVELOPE_KEYS } from "../src/envelope";
 import { project } from "../src/projection";
 import { capBody, readContinue, BODY_CAP_BYTES } from "../src/cap";
 import { nearestPaths, linkNext } from "../src/upstream";
+import { selectGrant } from "../src/grant";
 
 const SWAGGER = ["/api/v1/user", "/api/v1/users/{username}", "/api/v1/catalog/search", "/api/v1/catalog/entry/{owner}/{repo}/{tag}", "/api/v1/repos/{owner}/{repo}/contents/{filepath}", "/api/v1/version"];
 
@@ -58,6 +59,22 @@ describe("reads before writes (convention §3, T2)", () => {
       expect(e.status).toBe(400);
     }
     expect(hits.length).toBe(0);
+  });
+  it("percent-encoded dots cannot leave /api/v1", async () => {
+    const { d, hits } = deps(() => json({}));
+    for (const p of [
+      "/user/%2e%2e/%2e%2e/login/oauth/authorize",
+      "/api/v1/%2e%2e/%2e%2e/login/oauth/authorize",
+      "/repos/%2e%2e/admin",
+      "/%2e%2e/login",
+      "/user/%2E%2E/secret",
+      "/user/%252e%252e/admin",
+    ]) {
+      const e = await runExecute(d, { method: "GET", path: p });
+      expect(e.status).toBe(400);
+    }
+    expect(hits.length).toBe(0);
+    expect("refuse" in resolvePath("git.door43.org", "GET", "/api/v1/%2e%2e/%2e%2e/login/oauth/authorize")).toBe(true);
   });
   it("archive path is HEAD only", () => {
     expect("refuse" in resolvePath("h", "GET", "/o/r/archive/v1.zip")).toBe(true);
@@ -178,5 +195,38 @@ describe("200 KB cap + continue (convention §7: never a silent cut)", () => {
     expect(a.text).toBe("xxxx"); expect(a.truncated).toBe(true); expect(readContinue(a.continue!.continue)!.offset).toBe(4);
     const b = capBody(s, 8, { method: "GET", path: "/p" }, 4);
     expect(b.text).toBe("xx"); expect(b.truncated).toBe(false); expect(b.continue).toBeNull();
+  });
+  it("continue slices do not split UTF-8 characters", () => {
+    const s = "xxx" + "你" + "yyy";
+    const a = capBody(s, 0, { method: "GET", path: "/p" }, 4);
+    expect(a.truncated).toBe(true);
+    expect(a.text).toBe("xxx");
+    expect(a.text).not.toContain("\uFFFD");
+    const off = readContinue(a.continue!.continue)!.offset;
+    const b = capBody(s, off, { method: "GET", path: "/p" }, 20);
+    expect(a.text + b.text).toBe(s);
+    expect(JSON.parse(JSON.stringify(a.text + b.text))).toBe(s);
+  });
+});
+
+describe("selectGrant (in-execute refresh vs provider props)", () => {
+  const issued = 1_700_000_000_000;
+  const ttl = 3600;
+  const props = { sub: "1", login: "k", accessToken: "A1", refreshToken: "R1", expiresIn: ttl, expiresAt: issued + ttl * 1000 };
+  it("uses props when nothing is stored", () => {
+    expect(selectGrant(props, null)).toEqual({ accessToken: "A1", refreshToken: "R1" });
+  });
+  it("uses a stored in-execute refresh that is newer than props", () => {
+    expect(selectGrant(props, { sub: "1", accessToken: "A2", refreshToken: "R2", at: issued + 1000 }))
+      .toEqual({ accessToken: "A2", refreshToken: "R2" });
+  });
+  it("lets newer props win so a client /token refresh is not sticky", () => {
+    const stored = { sub: "1", accessToken: "A2", refreshToken: "R2", at: issued + 1000 };
+    const newer = { ...props, accessToken: "A3", refreshToken: "R3", expiresAt: issued + 10_000 + ttl * 1000 };
+    expect(selectGrant(newer, stored)).toEqual({ accessToken: "A3", refreshToken: "R3" });
+  });
+  it("ignores stored for a different sub", () => {
+    expect(selectGrant(props, { sub: "other", accessToken: "A2", refreshToken: "R2", at: issued + 1000 }))
+      .toEqual({ accessToken: "A1", refreshToken: "R1" });
   });
 });
