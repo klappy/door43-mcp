@@ -13,7 +13,7 @@
 
 Observed 2026-09-02: OAuth app registered (client id `4d2afcd1-…`), Worker `door43-mcp`
 exists with three secrets + `D43_HOST`; secret to be rotated after gate 0 (transcript exposure).
-HUMAN-ONLY: gate 5 listing account; **secret rotation now — `D43_CLIENT_SECRET` transited chat twice (2026-09-02 screenshot, 2026-09-03 screenshot).**
+HUMAN-ONLY: gate 5 listing account; secret rotation after the full build is proven (captain ruling 2026-09-03; `D43_CLIENT_SECRET` transited chat twice).
 Challenge (`oddkit_challenge`, planning) re-run after gate 0 with the spike result.
 Validation: external validator reads SPEC boundaries against `tools/list` and one
 transcript of journey 2.

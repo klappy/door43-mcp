@@ -11,7 +11,7 @@
 - T6 **`fields` is a projection, not semantics — hold the line.** The moment someone asks
   for `fields` to understand USFM or TSV, that is translation-helps-mcp's job. Retract `fields`
   before letting it grow.
-- T7 **Client secret transited chat twice** (2026-09-02; again 2026-09-03 to fix the clipped value — the Worker held it without the `gto_` prefix, 40/44 chars, DCS `unauthorized_client`). Gate 0 is proven: **rotate now**, dashboard only, no chat.
+- T7 **Client secret transited chat twice** (2026-09-02; again 2026-09-03 to fix the clipped value — the Worker held it without the `gto_` prefix, 40/44 chars, DCS `unauthorized_client`). **Captain ruling 2026-09-03:** rotate once the whole server is built and proven (gate 4), not per gate. Until then the transcript is a copy; dashboard only when it happens.
 - T8 **Resources/prompts vs. the ceiling.** MCP resources and prompts are not tools, so they sit
   outside the four-tool cap. If canon later counts them, the boarding pass moves into `docs()` only.
 - T9 **Single-env DO worker vs. `per-environment-worker-projects`.** `McpAgent` is a Durable Object; canon
