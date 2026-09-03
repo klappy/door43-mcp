@@ -95,6 +95,7 @@ describe("version single source of truth", () => {
     const pkg = (await import("../package.json")).default as { version: string };
     expect(VERSION).toBe(pkg.version);
     const r = await DcsAuthHandler.fetch(new Request(`${ORIGIN}/`), env());
-    expect(await r.text()).toContain(`door43-mcp ${pkg.version}`);
+    // The root page is now src/home.ts; it prints the version inside <code> (ticket 2026-09-03-door43-mcp-homepage-readme).
+    expect(await r.text()).toContain(`door43-mcp <code>${pkg.version}</code>`);
   });
 });

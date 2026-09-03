@@ -7,12 +7,13 @@
  *                /login/oauth/userinfo for sub+login; completeAuthorization with
  *                the grant as encrypted props.
  *   /health    — upstream reachability + version, public.
+ *   /          — the homepage (src/home.ts), rendered from src/surface.ts.
  * No PAT path exists here by design (SECURITY: "No PATs, ever").
  */
 import type { AuthRequest } from "@cloudflare/workers-oauth-provider";
 import type { Env, GrantProps } from "./types";
 import { open, randomVerifier, s256, seal } from "./seal";
-import { VERSION } from "./version";
+import { renderHome } from "./home";
 
 const html = (body: string, status = 200) =>
   new Response(`<!doctype html><meta charset="utf-8"><body style="font:16px system-ui;max-width:40em;margin:3em auto">${body}</body>`, {
@@ -114,7 +115,8 @@ export const DcsAuthHandler = {
     }
 
     if (url.pathname === "/") {
-      return html(`<h2>door43-mcp ${VERSION}</h2><p>Upstream <code>${env.D43_HOST}</code>. MCP endpoint <code>/mcp</code>. Governed by <code>klappy://canon/constraints/mcp-tool-surface-ceiling</code>.</p>`);
+      // The human door: rendered from src/surface.ts every request (ticket 2026-09-03-door43-mcp-homepage-readme).
+      return new Response(renderHome({ host: env.D43_HOST, serverUrl: url.origin }), { headers: { "content-type": "text/html; charset=utf-8" } });
     }
     return new Response("Not found", { status: 404 });
   },

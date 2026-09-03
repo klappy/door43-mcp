@@ -15,5 +15,7 @@
   "durable_objects": { "bindings": [{ "name": "MCP_OBJECT", "class_name": "Door43MCP" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Door43MCP"] }],
   // Secrets (Worker secrets only, never here): D43_CLIENT_ID, D43_CLIENT_SECRET, COOKIE_ENCRYPTION_KEY.
-  "vars": { "D43_HOST": "git.door43.org" }
+  "vars": { "D43_HOST": "git.door43.org" },
+  // docs/SURFACE.md is imported as text by src/surface.ts (the homepage copy). vitest does the same via its plugin.
+  "rules": [{ "type": "Text", "globs": ["**/*.md"] }]
 }
