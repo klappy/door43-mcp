@@ -1,19 +1,30 @@
 /**
  * The gated /mcp side. OAuthProvider has verified the client token and decrypted
- * THIS grant's props before the agent runs. Gate 1: ONE tool, `execute` (the
- * gate-0 `whoami` spike is retired — same call is `execute({method:"GET", path:"/user"})`).
+ * THIS grant's props before the agent runs. Gates 2+3: the three tools the ceiling
+ * describes — `docs`, `execute`, `telemetry` — and nothing else.
  * Ceiling: klappy://canon/constraints/mcp-tool-surface-ceiling · convention §2.
+ * Every tool call writes one telemetry row through `ctx.waitUntil` (src/telemetry).
+ * Tool descriptions are the connector's whole UI on the phone: one line, verb-first, ≤ 80 chars.
  */
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Env, GrantProps } from "./types";
+import type { Envelope } from "./envelope";
+import { byteLength } from "./envelope";
 import { runExecute, VERSION, type Grant } from "./tools/execute";
-import { refreshDcs, swaggerPaths, upstreamVersion } from "./upstream";
+import { runDocs } from "./tools/docs";
+import { runTelemetry } from "./tools/telemetry";
+import { writeRow, type TelemetryDb } from "./telemetry";
+import { DESCRIPTIONS } from "./descriptions";
+import { refreshDcs, swaggerDoc, swaggerPaths, upstreamVersion } from "./upstream";
 
 export { VERSION };
 
 const STORE_KEY = "grant:refreshed";
+const SERVER_URL = "https://door43.klappy.dev";
+
+export { DESCRIPTIONS };
 
 export class Door43MCP extends McpAgent<Env, Record<string, never>, GrantProps> {
   server = new McpServer({ name: "door43-mcp", version: VERSION });
@@ -29,41 +40,71 @@ export class Door43MCP extends McpAgent<Env, Record<string, never>, GrantProps> 
     return { accessToken: p.accessToken, refreshToken: p.refreshToken };
   }
 
+  /** One row per call, off the response path. Only allowlisted columns leave here (src/telemetry toRow). */
+  private emit(tool: "docs" | "execute" | "telemetry", input: unknown, out: Envelope, t0: number) {
+    const db = this.env.TELEMETRY_DB as TelemetryDb | undefined;
+    if (!db) return;
+    const p = this.ctx.waitUntil(writeRow(db, {
+      tool_name: tool, method: out.request.method, path: tool === "execute" ? out.request.path : undefined,
+      status: out.status, upstream_status: tool === "execute" ? out.status : null, upstream_ms: out.cost.upstream_ms,
+      duration_ms: Date.now() - t0, bytes_in: byteLength(input), bytes_out: out.cost.bytes, truncated: out.truncated,
+      consumer_label: this.props?.login ?? "unknown", consumer_source: this.props?.login ? "grant" : "none", worker_version: VERSION,
+    }).catch(() => undefined));
+    void p;
+  }
+
+  private reply(out: Envelope) {
+    return { content: [{ type: "text" as const, text: JSON.stringify(out, null, 2) }], isError: out.status >= 400 };
+  }
+
   async init() {
+    const env = this.env;
+    const host = env.D43_HOST;
+
+    this.server.registerTool(
+      "docs",
+      {
+        title: "Explain this server and DCS",
+        description: DESCRIPTIONS.docs,
+        annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+        inputSchema: {
+          rung: z.enum(["map", "raw"]).optional().describe("map = L1 path families; raw (with path) = L3 swagger slice; omit for the boarding pass"),
+          path: z.string().optional().describe("L2: one documented path, e.g. /catalog/search"),
+          query: z.string().optional().describe("Lexical search over path names + summaries"),
+          recipe: z.string().optional().describe("whoami · catalog-by-language · latest-release-zip · repo-tree-at-ref · page-through"),
+        },
+      },
+      async (input) => {
+        const t0 = Date.now();
+        const out = await runDocs({ host, version: VERSION, upstreamVersion: await upstreamVersion(host), swagger: () => swaggerDoc(host),
+          login: this.props?.login ?? null, loginUrl: `${SERVER_URL}/authorize`, serverUrl: SERVER_URL }, input);
+        this.emit("docs", input, out, t0);
+        return this.reply(out);
+      },
+    );
+
     this.server.registerTool(
       "execute",
       {
-        title: "Execute one read against DCS as you",
-        description:
-          "One call `{method, path, query?, fields?, headers?, continue?}` forwarded to the upstream DCS host as the logged-in user " +
-          "(`Authorization: token <access>`). GET/HEAD only in v1 (POST etc → 405, v2 gates writes). `path` is `/api/v1/…` (the `/api/v1` " +
-          "prefix is optional: `/user`, `/catalog/search`, `/repos/{o}/{r}/contents/{p}`) or `/{owner}/{repo}/archive/{ref}.zip` (HEAD → body.url). " +
-          "`fields` is a deterministic JSON-path projection (`data[].name`, `release.tag_name`) applied after the upstream answers — selection only, never semantics. " +
-          "Every answer is the envelope `{observed_at, upstream, request, status, body, truncated, next, continue, hints[], cost}`: `next` is the pre-formed call for the " +
-          "upstream's next page, `continue` re-enters a body cut at 200 KB, `hints` teach (401 → refreshed or re-login, 404 → nearest documented paths, 405 → v2).",
+        title: "Run one read against DCS as you",
+        description: DESCRIPTIONS.execute,
         annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
         inputSchema: {
           method: z.enum(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]).describe("GET or HEAD in v1; others answer 405 without touching the upstream"),
-          path: z.string().describe("Upstream path; parameters go in `query`, not here"),
+          path: z.string().describe("Upstream path: /api/v1/… (prefix optional: /user, /catalog/search) or /{owner}/{repo}/archive/{ref}.zip (HEAD → body.url); parameters go in `query`"),
           query: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
-          fields: z.array(z.string()).optional().describe("JSON paths to keep, e.g. [\"data[].name\",\"data[].owner.login\"]"),
+          fields: z.array(z.string()).optional().describe("JSON paths to keep, e.g. [\"data[].name\",\"data[].owner\"] — selection only"),
           headers: z.record(z.string(), z.string()).optional().describe("Forwarded only: accept, accept-language, if-none-match, if-modified-since, range"),
           continue: z.string().optional().describe("Opaque token from a truncated answer's `continue`"),
         },
       },
       async (input) => {
-        const env = this.env;
-        const host = env.D43_HOST;
+        const t0 = Date.now();
         const grant = await this.currentGrant();
         const out = await runExecute(
           {
-            host,
-            version: await upstreamVersion(host),
-            fetch: (u, i) => fetch(u, i),
-            grant,
-            consumer: this.props?.login ?? "unknown",
-            loginUrl: "https://door43.klappy.dev/authorize",
-            swagger: () => swaggerPaths(host),
+            host, version: await upstreamVersion(host), fetch: (u, i) => fetch(u, i), grant,
+            consumer: this.props?.login ?? "unknown", loginUrl: `${SERVER_URL}/authorize`, swagger: () => swaggerPaths(host),
             refresh: async (g) => {
               if (!g.refreshToken) return null;
               const t = await refreshDcs(host, env.D43_CLIENT_ID, env.D43_CLIENT_SECRET, g.refreshToken);
@@ -75,7 +116,24 @@ export class Door43MCP extends McpAgent<Env, Record<string, never>, GrantProps> 
           },
           input,
         );
-        return { content: [{ type: "text" as const, text: JSON.stringify(out, null, 2) }], isError: out.status >= 400 };
+        this.emit("execute", input, out, t0);
+        return this.reply(out);
+      },
+    );
+
+    this.server.registerTool(
+      "telemetry",
+      {
+        title: "Read this server's own usage numbers",
+        description: DESCRIPTIONS.telemetry,
+        annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+        inputSchema: { sql: z.string().describe("One SELECT over door43mcp_telemetry; no ';', no writes") },
+      },
+      async (input) => {
+        const t0 = Date.now();
+        const out = await runTelemetry({ host, upstreamVersion: await upstreamVersion(host), db: (env.TELEMETRY_DB as TelemetryDb | undefined) ?? null }, input);
+        this.emit("telemetry", input, out, t0);
+        return this.reply(out);
       },
     );
   }

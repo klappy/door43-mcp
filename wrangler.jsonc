@@ -9,6 +9,8 @@
   "routes": [{ "pattern": "door43.klappy.dev", "custom_domain": true }],
   // Provider state: hashed OAuth grants + per-grant encrypted props (SPEC §Stack).
   "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "a9311ccc415a417f894a0d666362977c" }],
+  // Telemetry exact channel (ticket 2026-09-02-door43-mcp-gate2-3): the ONE D1 created by CoS 02:32Z. Bind, never create another.
+  "d1_databases": [{ "binding": "TELEMETRY_DB", "database_name": "door43mcp_telemetry", "database_id": "52fa8ea4-7774-4135-b160-f17bb41ac660" }],
   // McpAgent is a Durable Object (agents package). One class, sqlite-backed.
   "durable_objects": { "bindings": [{ "name": "MCP_OBJECT", "class_name": "Door43MCP" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Door43MCP"] }],

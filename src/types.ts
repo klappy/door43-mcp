@@ -10,6 +10,8 @@ export interface Env {
   D43_HOST: string;
   /** Provider grant store. */
   OAUTH_KV: KVNamespace;
+  /** Telemetry exact channel: D1 `door43mcp_telemetry` (id 52fa8ea4-…, bound in wrangler.jsonc; never created by code). */
+  TELEMETRY_DB?: D1Database;
   /** McpAgent Durable Object namespace. */
   MCP_OBJECT: DurableObjectNamespace;
   /** Injected by OAuthProvider on the default handler. */

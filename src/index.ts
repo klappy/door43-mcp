@@ -1,5 +1,5 @@
 /**
- * door43-mcp — gate 1 (`execute`).
+ * door43-mcp — gates 0–3: `docs`, `execute`, `telemetry` (the three-tool server).
  * Library, not hand-rolled (convention §1): `agents` McpAgent behind
  * `@cloudflare/workers-oauth-provider`; upstream = DCS OIDC (PKCE S256).
  * The durable refresh path is the provider's own: when a client refreshes its
