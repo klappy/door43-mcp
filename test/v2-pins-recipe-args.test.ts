@@ -56,6 +56,12 @@ describe("v2.4 — recipe grammar: args and templates (docs)", () => {
     expect(good.ok && good.plan.calls[0]).toEqual({ method: "GET", path: "/repos/o/r/contents/tn/README.md", query: { ref: SHA }, fields: ["name", "sha", "size", "encoding", "content"] });
     const slash = fill("latest-release-zip", { owner: "o/x", repo: "r" });
     expect(!slash.ok && slash.arg).toBe("owner");
+    // "" on an optional arg takes the default; no template survives into the plan (Bugbot #14).
+    const empty = fill("repo-tree-at-ref", { owner: "o", repo: "r", ref: "" });
+    expect(empty.ok && empty.plan.calls[0].path).toBe("/repos/o/r/git/trees/master");
+    expect(JSON.stringify(empty.ok && empty.plan.calls)).not.toMatch(/\{[a-z]+\}/);
+    const emptyReq = fill("latest-release-zip", { owner: "", repo: "r" });
+    expect(!emptyReq.ok && emptyReq.arg).toBe("owner");
     const unknown = fill("whoami", { owner: "o" });
     expect(!unknown.ok && unknown.status).toBe(400);
   });
