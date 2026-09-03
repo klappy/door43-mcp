@@ -21,7 +21,7 @@ describe("GET /", () => {
   });
   it("names the three tools with DESCRIPTIONS verbatim, and the MCP URL for this origin", async () => {
     const { body } = await home();
-    for (const [name, line] of Object.entries(DESCRIPTIONS)) { expect(body).toContain(`<b>${name}</b>`); expect(body).toContain(line.replace(/&/g, "&amp;")); }
+    for (const [name, line] of Object.entries(DESCRIPTIONS)) { expect(body).toContain(`<span class="chip">${name}</span>`); expect(body).toContain(line.replace(/&/g, "&amp;")); }
     expect(body).toContain(`${ORIGIN}/mcp`);
     expect(body).toContain(`id="cp"`); // the copy button
   });
@@ -29,6 +29,13 @@ describe("GET /", () => {
     const { body } = await home();
     expect(body).toContain(`<code>${pkg.version}</code>`);
     for (const v of body.match(/\b\d+\.\d+\.\d+\b/g) ?? []) expect(v).toBe(pkg.version);
+  });
+  it("copy rules of the design system: no emoji, no exclamation marks, no em-dashes in visible text", async () => {
+    const { body } = await home();
+    let text = body.replace(/<style>[\s\S]*?<\/style>/, "").replace(/<script>[\s\S]*?<\/script>/, "").replace(/<[^>]+>/g, " ");
+    for (const line of Object.values(DESCRIPTIONS)) text = text.replace(line.replace(/&/g, "&amp;"), ""); // DESCRIPTIONS are verbatim by law; the connector's copy is not the page's to edit
+    expect(text).not.toMatch(/[!—]/);
+    expect(text).not.toMatch(/[\u{1F300}-\u{1FAFF}]/u);
   });
   it("zero external assets: no external script/style/font/image, no @import, no inline event handlers", async () => {
     const { body } = await home();
@@ -46,11 +53,12 @@ describe("GET /", () => {
     expect(body).toContain(`observed_at`);
     expect(body).not.toContain("1.27.2"); // the upstream version is never typed into the page
   });
-  it("glass-morphism mechanism is present: backdrop blur, translucent panels, thin light borders, layered gradient, both schemes", async () => {
+  it("Generative Glass material is present: fill ladder, blur+saturate, inner top light, aurora field, dark aliases", async () => {
     const { body } = await home();
-    expect(body).toContain("backdrop-filter:blur(");
-    expect(body).toMatch(/--glass:rgba\(255,255,255,\.\d+\)/);
-    expect(body).toContain("radial-gradient(");
+    expect(body).toContain("backdrop-filter:blur(var(--blur-medium)) var(--sat-glass)");
+    expect(body).toMatch(/--glass-fill-2:rgba\(255,255,255,\.\d+\)/); // the design system's fill ladder
+    expect(body).toContain("--aurora-field:radial-gradient(");
+    expect(body).toContain("--inner-top:inset 0 1px 0"); // every glass surface carries the top light
     expect(body).toContain("prefers-color-scheme:dark");
   });
 });

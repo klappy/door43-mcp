@@ -19,7 +19,7 @@ https://door43.klappy.dev/mcp
 
 1. Add the MCP URL to your client (Claude, Cursor, or any MCP client that speaks OAuth).
 2. Log in when the client sends you to git.door43.org and approve the app.
-3. Ask for `execute GET /user` — it returns your Door43 login. You are in.
+3. Ask for `execute GET /user`. It returns your Door43 login. You are in.
 
 ## The three tools
 
