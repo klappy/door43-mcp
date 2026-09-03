@@ -1,0 +1,13 @@
+# CI on push: typecheck + tests. Deploy is NOT here — Workers Builds deploys on push (convention §10).
+name: ci
+on: { push: {}, pull_request: {} }
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
