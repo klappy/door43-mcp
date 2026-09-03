@@ -63,7 +63,7 @@ export function fill(name: string, args: Record<string, string | number | boolea
   if (!r) return { ok: false, status: 404, error: `no recipe '${name}'`, recipes: Object.keys(RECIPES) };
   const resolved: Record<string, string> = {};
   for (const [k, a] of Object.entries(r.args)) {
-    const v = args[k] !== undefined ? String(args[k]) : a.default;
+    const v = args[k] !== undefined && args[k] !== "" ? String(args[k]) : a.default;
     if (v === undefined || v === "") { if (a.required) return { ok: false, status: 400, error: `missing arg '${k}'`, arg: k, about: a.about, args: r.args }; continue; }
     if (a.pattern && !a.pattern.test(v)) return { ok: false, status: 400, error: `arg '${k}' does not match its shape`, arg: k, about: a.about, args: r.args };
     if (/[/?#]/.test(v) && k !== "path") return { ok: false, status: 400, error: `arg '${k}' may not contain '/', '?' or '#'`, arg: k, about: a.about, args: r.args };

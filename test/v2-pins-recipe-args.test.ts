@@ -48,8 +48,12 @@ describe("v2.4 — recipe grammar: args and templates (docs)", () => {
   it("defaults fill (ref=master, limit typed as number); a pattern arg is shape-checked, not fetched", () => {
     const t = fill("repo-tree-at-ref", { owner: "o", repo: "r" });
     expect(t.ok && t.plan.calls[0].path).toBe("/repos/o/r/git/trees/master");
+    const empty = fill("repo-tree-at-ref", { owner: "o", repo: "r", ref: "" });
+    expect(empty.ok && empty.plan.calls[0].path).toBe("/repos/o/r/git/trees/master");
     const p = fill("page-through", { limit: 7 });
     expect(p.ok && p.plan.calls[0].query?.limit).toBe(7);
+    const emptyLimit = fill("page-through", { limit: "" });
+    expect(emptyLimit.ok && emptyLimit.plan.calls[0].query?.limit).toBe(50);
     const bad = fill("read-file-at-pin", { owner: "o", repo: "r", path: "README.md", sha: "master" });
     expect(!bad.ok && bad.status === 400 && bad.arg).toBe("sha");
     const good = fill("read-file-at-pin", { owner: "o", repo: "r", path: "tn/README.md", sha: SHA });
