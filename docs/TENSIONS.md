@@ -17,7 +17,7 @@
 - T8 **Resources/prompts vs. the ceiling.** MCP resources and prompts are not tools, so they sit
   outside the four-tool cap. If canon later counts them, the boarding pass moves into `docs()` only.
 - T9 **Single-env DO worker vs. `per-environment-worker-projects`.** `McpAgent` is a Durable Object; canon
-  says DO-backed workers get separate dev/staging/prod projects. Gate 0 deploys one `door43-mcp`. Decide before gate 1.
+  says DO-backed workers get separate dev/staging/prod projects. Gate 0 deploys one `door43-mcp`. **Observed 2026-09-03:** CF issues no version preview for a DO-bound Worker (`has_preview:false` on every green build), so branch previews are structurally unavailable here. Decide now, not gate 1: (b) merge-to-main proves on prod, or a second Worker `door43-mcp-dev` per canon.
 - T10 **Door without a deploy credential.** GitHub-write + no CF token = a door that can build but not fly
   (same shape as the 2026-08-31 read-only-door finding). Either seats carry a scoped 1h CF token, or deploy rides
   Workers Builds on push. (Observed 2026-09-02.)
