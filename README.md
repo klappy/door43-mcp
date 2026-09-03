@@ -2,7 +2,7 @@
 
 🚪🔐 Door43 (DCS) as an MCP server — login with your Door43 account, 📖 `docs` · ⚡ `execute` · 📊 `telemetry`. Three tools, no pasted tokens. ☁️ Cloudflare Workers.
 
-Status: **planning** — docs cut 2026-09-02, no code yet. Gate 0 (OAuth spike) opens the build.
+Status: **live** at `https://door43.klappy.dev/mcp` — three tools, reads only (v1). Version is `package.json`; the server prints it at `/` and in `docs()`. Validated as built: [docs/validation/2026-09-03-v1.md](docs/validation/2026-09-03-v1.md).
 
 **Agents start at [AGENTS.md](AGENTS.md).**
 
