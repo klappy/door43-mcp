@@ -3,6 +3,7 @@
 | Gate | Work | Done-means | Owner |
 |---|---|---|---|
 | 0 | **Spike**: register OAuth app (HUMAN-ONLY), minimal worker, login, `GET /api/v1/user` | 200 with login name, screenshot in PR | Otto |
+| 0 · observed 2026-09-03 | **Build green** — Workers Builds `5490c87a` on `bb0efae`, version `66df4da0`, alias `gate0-oauth-spike`. Fixes on the way: `.npmrc legacy-peer-deps` (npm ci mismatch), DO migration `v1` applied by API (versions upload rejects migrations, CF 10211), one transient CF API reset. **Preview URL does not exist:** every version reports `has_preview:false` — CF issues no version previews for a Worker with a Durable Object binding (`McpAgent`). So `gate0-oauth-spike-door43-mcp.klappy.workers.dev` cannot host the DCS round-trip; path (a) is closed by observation. **Still blank:** login round-trip, `GET /api/v1/user` status/login, header shape, token TTL. Prod `door43.klappy.dev` = placeholder 503 + DO class. | gate 0 open; needs path (b) or a per-env Worker | Otto |
 | 1a | `execute` GET + envelope + refresh-on-401 + teaching errors | Acceptance 2, 3, 5, 11 | Otto |
 | 1b | `fields` projection + cap + `continue`/`next` | Acceptance 9, 10 | Otto |
 | 2 | `docs` ladder L0–L3 + recipes + boarding-pass resource | Acceptance 4, 8 | Otto |

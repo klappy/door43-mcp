@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "door43-mcp",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  // Custom domain: wrangler creates the DNS record on deploy (route bound to the host).
+  "routes": [{ "pattern": "door43.klappy.dev", "custom_domain": true }],
+  // Provider state: hashed OAuth grants + per-grant encrypted props (SPEC §Stack).
+  "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "a9311ccc415a417f894a0d666362977c" }],
+  // McpAgent is a Durable Object (agents package). One class, sqlite-backed.
+  "durable_objects": { "bindings": [{ "name": "MCP_OBJECT", "class_name": "Door43MCP" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Door43MCP"] }],
+  // Secrets (Worker secrets only, never here): D43_CLIENT_ID, D43_CLIENT_SECRET, COOKIE_ENCRYPTION_KEY.
+  "vars": { "D43_HOST": "git.door43.org" }
+}
