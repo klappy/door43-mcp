@@ -1,7 +1,7 @@
 # TENSIONS (open)
 - T1 ~~Token-as-bearer unproven.~~ **Resolved 2026-09-03T01:47Z:** `Authorization: token <access>` on `GET /api/v1/user` → 200, login `klappy`, TTL 3600 s, refresh present.
 - T2 **`execute` breadth vs. authz parity.** Passthrough trusts DCS to enforce
-  permissions. Holds for reads; v2 writes need mirrored confirmations.
+  permissions. Holds for reads; v2 writes need mirrored confirmations. **Observed 2026-09-03 (gate 1):** the edge allowlists method (GET/HEAD) and path shape (`/api/v1/…` or `/{o}/{r}/archive/{ref}.zip` HEAD-only); `?`, `#`, `..`, `//` in `path` → 400 with no upstream fetch (test asserts); forwarded headers are allow-listed (accept, accept-language, if-none-match, if-modified-since, range). Authz itself stays DCS's — every 4xx passes DCS's body through unchanged. Open for v2 as written.
 - T3 **Rulings not in canon.** "CF library, never hand-rolled" and "3–4 tools" were
   chat/journal rulings until klappy.dev#315 / kitchen#67. Until merged, this repo cites PRs.
 - T4 **oddkit URI case.** `klappy://docs/templates/prd-template` 404s; file is
