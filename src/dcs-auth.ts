@@ -18,6 +18,8 @@ const html = (body: string, status = 200) =>
     status, headers: { "content-type": "text/html; charset=utf-8" },
   });
 
+const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
 type Sealed = { req: AuthRequest; verifier: string };
 
 export const DcsAuthHandler = {
@@ -35,7 +37,7 @@ export const DcsAuthHandler = {
     if (url.pathname === "/authorize") {
       let req: AuthRequest;
       try { req = await env.OAUTH_PROVIDER.parseAuthRequest(request); }
-      catch (e) { return html(`<h2>Bad authorization request.</h2><p>${(e as Error).message}</p><p>MCP clients register at <code>/register</code> first.</p>`, 400); }
+      catch (e) { return html(`<h2>Bad authorization request.</h2><p>${esc((e as Error).message)}</p><p>MCP clients register at <code>/register</code> first.</p>`, 400); }
       const verifier = randomVerifier();
       const state = await seal(env.COOKIE_ENCRYPTION_KEY, { req, verifier } satisfies Sealed);
       const a = new URL(`${base}/login/oauth/authorize`);
@@ -52,6 +54,11 @@ export const DcsAuthHandler = {
     if (url.pathname === "/callback") {
       const code = url.searchParams.get("code");
       const state = url.searchParams.get("state");
+      const error = url.searchParams.get("error");
+      if (error) {
+        const desc = url.searchParams.get("error_description");
+        return html(`<h2>Authorization failed (${esc(error)}).</h2>${desc ? `<p>${esc(desc)}</p>` : ""}`, 400);
+      }
       if (!code || !state) return html("<h2>Missing code or state.</h2>", 400);
       let sealed: Sealed;
       try { sealed = await open<Sealed>(env.COOKIE_ENCRYPTION_KEY, state); }
