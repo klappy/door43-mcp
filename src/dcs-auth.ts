@@ -18,7 +18,8 @@ const html = (body: string, status = 200) =>
     status, headers: { "content-type": "text/html; charset=utf-8" },
   });
 
-type Sealed = { req: AuthRequest; verifier: string };
+/** `debug` is sealed at /authorize (`?debug=1`) so the callback cannot be talked into the page by a query param. */
+type Sealed = { req: AuthRequest; verifier: string; debug?: boolean };
 
 export const DcsAuthHandler = {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -37,7 +38,8 @@ export const DcsAuthHandler = {
       try { req = await env.OAUTH_PROVIDER.parseAuthRequest(request); }
       catch (e) { return html(`<h2>Bad authorization request.</h2><p>${(e as Error).message}</p><p>MCP clients register at <code>/register</code> first.</p>`, 400); }
       const verifier = randomVerifier();
-      const state = await seal(env.COOKIE_ENCRYPTION_KEY, { req, verifier } satisfies Sealed);
+      const debug = url.searchParams.get("debug") === "1";
+      const state = await seal(env.COOKIE_ENCRYPTION_KEY, { req, verifier, debug } satisfies Sealed);
       const a = new URL(`${base}/login/oauth/authorize`);
       a.searchParams.set("client_id", env.D43_CLIENT_ID);
       a.searchParams.set("redirect_uri", `${url.origin}/callback`);
@@ -101,8 +103,13 @@ export const DcsAuthHandler = {
         request: sealed.req, userId: u.sub, metadata: { login: props.login },
         scope: sealed.req.scope, props,
       });
-      // Show the observation once, then hand the code to the client.
-      return html(`<h2>Gate 0 observed — logged in as <b>${u.login}</b>.</h2><pre>${JSON.stringify(observed, null, 2)}</pre><p><a href="${redirectTo}">Continue to client</a> (localhost will not load; copy the <code>code=</code> from that link).</p>`);
+      // Success → straight back to the client. Gate 0 is closed; its proof page lives only behind
+      // `?debug=1` on the authorize URL (sealed into state), and prints login only — no token-adjacent fields.
+      if (sealed.debug) {
+        const shown = { observed_at: observed.observed_at, status: observed.status, login: observed.login, upstream_ms };
+        return html(`<h2>Debug — logged in as <b>${u.login}</b>.</h2><pre>${JSON.stringify(shown, null, 2)}</pre><p><a href="${redirectTo}">Continue to client</a></p>`);
+      }
+      return Response.redirect(redirectTo, 302);
     }
 
     if (url.pathname === "/") {
