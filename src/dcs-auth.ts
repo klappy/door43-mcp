@@ -66,7 +66,13 @@ export const DcsAuthHandler = {
           redirect_uri: `${url.origin}/callback`, code_verifier: sealed.verifier,
         }),
       });
-      if (!tok.ok) return html(`<h2>DCS token exchange failed (${tok.status}).</h2>`, 502);
+      if (!tok.ok) {
+        // Surface DCS's own error (error/error_description only — never the secret, never the code).
+        const errText = await tok.text();
+        let err: any = {}; try { err = JSON.parse(errText); } catch { err = { raw: errText.slice(0, 300) }; }
+        const shown = JSON.stringify({ error: err.error, error_description: err.error_description, raw: err.raw }, null, 2);
+        return html(`<h2>DCS token exchange failed (${tok.status}).</h2><pre>${shown.replace(/</g, "&lt;")}</pre><p>observed_at ${new Date().toISOString()} · sent: grant_type=authorization_code, redirect_uri=${url.origin}/callback, code_verifier present, client_secret present (${env.D43_CLIENT_SECRET.length} chars)</p>`, 502);
+      }
       const t = await tok.json<{ access_token: string; refresh_token?: string; expires_in?: number; token_type?: string }>();
 
       const ui = await fetch(`${base}/login/oauth/userinfo`, { headers: { authorization: `Bearer ${t.access_token}` } });
