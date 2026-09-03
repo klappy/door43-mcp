@@ -88,3 +88,13 @@ describe("/callback exchange failure (unchanged)", () => {
     expect(body).not.toContain("gto_secret");
   });
 });
+
+describe("version single source of truth", () => {
+  it("VERSION equals package.json and the root page prints it", async () => {
+    const { VERSION } = await import("../src/version");
+    const pkg = (await import("../package.json")).default as { version: string };
+    expect(VERSION).toBe(pkg.version);
+    const r = await DcsAuthHandler.fetch(new Request(`${ORIGIN}/`), env());
+    expect(await r.text()).toContain(`door43-mcp ${pkg.version}`);
+  });
+});
