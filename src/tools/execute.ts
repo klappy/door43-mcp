@@ -12,7 +12,7 @@ import { project } from "../projection";
 import { capBody, readContinue } from "../cap";
 import { linkNext, nearestPaths } from "../upstream";
 
-export const VERSION = "0.2.0";
+export const VERSION = "0.3.0";
 const API = "/api/v1";
 const ARCHIVE = /^\/[\w.-]+\/[\w.-]+\/archive\/[^/?#]+\.zip$/;
 const REFRESH_HINT = "refreshed: upstream token was expired; one silent refresh, one retry";

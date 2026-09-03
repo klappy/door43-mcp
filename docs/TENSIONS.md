@@ -12,11 +12,11 @@
   for `fields` to understand USFM or TSV, that is translation-helps-mcp's job. Retract `fields`
   before letting it grow.
 - T7 **Client secret transited chat twice** (2026-09-02; again 2026-09-03 to fix the clipped value — the Worker held it without the `gto_` prefix, 40/44 chars, DCS `unauthorized_client`). **Captain ruling 2026-09-03:** rotate once the whole server is built and proven (gate 4), not per gate. Until then the transcript is a copy; dashboard only when it happens.
-- T8 **Resources/prompts vs. the ceiling.** MCP resources and prompts are not tools, so they sit
-  outside the four-tool cap. If canon later counts them, the boarding pass moves into `docs()` only.
+- T8 ~~Resources/prompts vs. the ceiling.~~ **Resolved by observation 2026-09-03 (gate 2):** the connector UI on the captain's phone shows tool name + description and nothing else (screenshot 2026-09-02 22:29 ET); resources and prompts have no surface there. Gate 2 ships the boarding pass in `docs()` only — no `door43://boarding-pass` resource, no prompts. SPEC §resources recut to say so. If a client surfaces them later, add them then (they stay outside the tool cap).
 - T9 **Single-env DO worker vs. `per-environment-worker-projects`.** `McpAgent` is a Durable Object; canon
   says DO-backed workers get separate dev/staging/prod projects. Gate 0 deploys one `door43-mcp`. **Observed 2026-09-03:** CF issues no version preview for a DO-bound Worker (`has_preview:false` on every green build), so branch previews are structurally unavailable here. Decide now, not gate 1: (b) merge-to-main proves on prod, or a second Worker `door43-mcp-dev` per canon.
 - T10 **Door without a deploy credential.** GitHub-write + no CF token = a door that can build but not fly
   (same shape as the 2026-08-31 read-only-door finding). Either seats carry a scoped 1h CF token, or deploy rides
   Workers Builds on push. (Observed 2026-09-02.)
 - T11 ~~Convention cited as merged, file says proposed.~~ **Closed 2026-09-03.** Header recut in kitchen#69: `Status: law (merged 2026-09-02)`. Seat miss: read a stale zoom, not the head.
+- T12 **Telemetry sampled channel needs a credential the seat does not hold.** House prior art (cartographer) serves two channels: exact (D1, no credential) and sampled (Analytics Engine, `SUM(_sample_interval)`, needs a CF read token for the SQL API). Gate 3 ships exact only. Wiring AE means a Worker secret (`CF_AE_READ_TOKEN` or equivalent) — HUMAN-ONLY(secret). Until then `telemetry` answers from D1 alone and says `exact: true` on every answer. (Observed 2026-09-03, gate 3.)

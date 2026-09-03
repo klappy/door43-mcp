@@ -20,7 +20,6 @@ export async function refreshDcs(
 /** In-isolate caches, TTL 1h (SPEC §docs: swagger ETag-cached, TTL 1h). */
 const TTL_MS = 60 * 60 * 1000;
 let versionCache: { host: string; at: number; version: string | null } | null = null;
-let swaggerCache: { host: string; at: number; etag: string | null; paths: string[] } | null = null;
 
 export async function upstreamVersion(host: string, fetchFn: typeof fetch = fetch): Promise<string | null> {
   if (versionCache && versionCache.host === host && Date.now() - versionCache.at < TTL_MS) return versionCache.version;
@@ -29,20 +28,34 @@ export async function upstreamVersion(host: string, fetchFn: typeof fetch = fetc
   return version;
 }
 
-export async function swaggerPaths(host: string, fetchFn: typeof fetch = fetch): Promise<string[]> {
-  if (swaggerCache && swaggerCache.host === host && Date.now() - swaggerCache.at < TTL_MS) return swaggerCache.paths;
+/** The live swagger, parsed. `docs` reads it; `execute` uses only its path list for 404 hints. */
+export interface SwaggerOp { summary?: string; description?: string; operationId?: string; tags?: string[];
+  parameters?: Array<{ name: string; in: string; type?: string; required?: boolean; description?: string; schema?: unknown }>;
+  responses?: Record<string, { description?: string; schema?: unknown; $ref?: string }> }
+export interface SwaggerDoc { basePath: string; version: string | null; etag: string | null; observed_at: string;
+  paths: Record<string, Record<string, SwaggerOp>>; definitions: Record<string, unknown>; responses: Record<string, unknown> }
+let swaggerCache: { host: string; at: number; doc: SwaggerDoc } | null = null;
+
+export async function swaggerDoc(host: string, fetchFn: typeof fetch = fetch): Promise<SwaggerDoc | null> {
+  if (swaggerCache && swaggerCache.host === host && Date.now() - swaggerCache.at < TTL_MS) return swaggerCache.doc;
   const headers: Record<string, string> = {};
-  if (swaggerCache?.etag && swaggerCache.host === host) headers["if-none-match"] = swaggerCache.etag;
+  if (swaggerCache?.doc.etag && swaggerCache.host === host) headers["if-none-match"] = swaggerCache.doc.etag;
   try {
     const r = await fetchFn(`https://${host}/swagger.v1.json`, { headers });
-    if (r.status === 304 && swaggerCache) { swaggerCache.at = Date.now(); return swaggerCache.paths; }
-    if (!r.ok) return swaggerCache?.paths ?? [];
-    const j = (await r.json()) as { basePath?: string; paths?: Record<string, unknown> };
-    const base = j.basePath ?? "/api/v1";
-    const paths = Object.keys(j.paths ?? {}).map((p) => base + p).sort();
-    swaggerCache = { host, at: Date.now(), etag: r.headers.get("etag"), paths };
-    return paths;
-  } catch { return swaggerCache?.paths ?? []; }
+    if (r.status === 304 && swaggerCache) { swaggerCache.at = Date.now(); return swaggerCache.doc; }
+    if (!r.ok) return swaggerCache?.doc ?? null;
+    const j = (await r.json()) as { basePath?: string; info?: { version?: string }; paths?: SwaggerDoc["paths"]; definitions?: Record<string, unknown>; responses?: Record<string, unknown> };
+    const doc: SwaggerDoc = { basePath: j.basePath ?? "/api/v1", version: j.info?.version ?? null, etag: r.headers.get("etag"),
+      observed_at: new Date().toISOString(), paths: j.paths ?? {}, definitions: j.definitions ?? {}, responses: j.responses ?? {} };
+    swaggerCache = { host, at: Date.now(), doc };
+    return doc;
+  } catch { return swaggerCache?.doc ?? null; }
+}
+
+export async function swaggerPaths(host: string, fetchFn: typeof fetch = fetch): Promise<string[]> {
+  const doc = await swaggerDoc(host, fetchFn);
+  if (!doc) return [];
+  return Object.keys(doc.paths).map((p) => doc.basePath + p).sort();
 }
 
 /** Nearest documented paths by shared prefix, then shared segments. Pure; tested. */

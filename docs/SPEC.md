@@ -15,7 +15,7 @@
 
 ## Stack
 Cloudflare Workers · `agents` (`McpAgent`) · `@cloudflare/workers-oauth-provider`
-(upstream = DCS OIDC) · Analytics Engine · KV for the provider's grant store.
+(upstream = DCS OIDC) · D1 (`TELEMETRY_DB`, exact telemetry) · KV for the provider's grant store.
 
 ## Tools
 
@@ -31,14 +31,15 @@ All three share one **response envelope** (Design §3):
 ```
 `next` is derived from upstream `Link` / `X-Total-Count` and pre-formed as an execute call.
 
-### `docs({ level?, path?, query?, recipe? })`
+### `docs({ rung?, path?, query?, recipe? })`
 - No args → **L0 boarding pass** (≤ 2 KB): server version, upstream host+version+observed_at,
   auth state (`logged_in_as` or `login_url`), the three contracts, domain map, journeys.
-- `level: 1` → domain map: `catalog`, `repos`, `user`, `orgs`, `misc` — one line + three most-used paths each.
+- `rung: "map"` → L1 map: `catalog`, `repos`, `user`, `users`, `orgs`, `misc` — count + one line + three most-used paths each.
 - `path: "/catalog/search"` → L2: that path's params, response shape, one example call.
-- `level: 3, path` → raw swagger fragment.
+- `rung: "raw", path` → L3 raw swagger fragment, verbatim.
 - `query` → lexical match over path names + summaries (BM25), returns L2 stubs.
-- `recipe: "whoami" | "pin-release" | "read-file" | "list-releases"` → filled execute calls in order.
+- `recipe: "whoami" | "catalog-by-language" | "latest-release-zip" | "repo-tree-at-ref" | "page-through"` → filled execute calls in order (ticket 2026-09-02-door43-mcp-gate2-3 names the five).
+- `docs` never calls DCS except for the swagger fetch; the pass makes no upstream call at all.
 - Swagger fetched from `https://<D43_HOST>/swagger.v1.json`, ETag-cached, TTL 1h. Canon proxy
   via oddkit when `query` starts with `canon:`.
 
@@ -55,14 +56,16 @@ All three share one **response envelope** (Design §3):
 - 404 → `hints` lists up to 3 nearest documented paths from the swagger index.
 
 ### `telemetry({ sql })`
-Read-only SQL against `door43mcp_telemetry`. Columns: `event_type, tool_name, method,
-path_prefix (two segments), status, consumer_label, duration_ms, bytes_out, tokens_out,
+Read-only SQL against D1 `door43mcp_telemetry` (exact channel; AE sampled channel is T12).
+Single `SELECT`, no `;`, no mutating/admin keyword → else `400` envelope and nothing runs.
+Columns (`src/telemetry/schema.sql`): `timestamp, event_type, method, tool_name, consumer_label,
+consumer_source, worker_version, status, upstream_status, upstream_ms, path_family (/repos|/catalog|
+/user|other), duration_ms, bytes_in, bytes_out, tokens_in, tokens_out, cache_hits, cache_lookups,
 truncated, count`. No user id, no full path, no query string.
 
 ## MCP resources & prompts (not tools; ceiling untouched)
-- Resource `door43://boarding-pass` — same bytes as `docs()`.
-- Resource `door43://swagger` — the cached swagger with ETag.
-- Prompts (v1.1): the four journeys as MCP prompts.
+Not shipped in v1 (T8, resolved by observation: the connector UI shows tools only). The boarding
+pass lives in `docs()`; `AGENTS.md` is its repo twin. Resources/prompts return when a client shows them.
 
 ## Endpoints
 `/mcp` (streamable HTTP) · `/authorize`, `/callback`, `/token` (provider) · `/health`

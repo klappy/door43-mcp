@@ -15,9 +15,9 @@ logged-in user. Three tools. Governed by `klappy://canon/constraints/mcp-tool-su
 Everything else (CHARTER, PRD, DESIGN, SECURITY, DEPLOY, BORROW-EVALUATION) is why/who.
 
 ## Contracts in one glance
-- `docs({ level?, path?, query?, recipe? })` → boarding pass (no args) / map / path / raw.
+- `docs({ rung?, path?, query?, recipe? })` → boarding pass (no args) / `rung:"map"` / `path` / `rung:"raw"` / `query` / `recipe`.
 - `execute({ method, path, query?, fields?, headers? })` → envelope (below). GET/HEAD in v1.
-- `telemetry({ sql })` → rows. SELECT only.
+- `telemetry({ sql })` → rows from D1 `door43mcp_telemetry` (exact channel). SELECT only.
 - Every response: `{ observed_at, upstream, request, status, body, truncated, next, hints, cost }`.
 
 ## Map of the upstream (DCS 1.27.2+dcs, observed 2026-09-02)
@@ -27,7 +27,7 @@ Everything else (CHARTER, PRD, DESIGN, SECURITY, DEPLOY, BORROW-EVALUATION) is w
 
 ## Journeys (run these; do not improvise)
 1. `execute GET /user` — who am I.
-2. `docs({recipe:"pin-release"})` → filled calls: catalog search → entry → archive URL.
+2. `docs({recipe:"latest-release-zip"})` → a filled call that returns `zipball_url` (also: whoami · catalog-by-language · repo-tree-at-ref · page-through).
 3. `execute GET /repos/{o}/{r}/contents/{p}?ref={tag}` with `fields:["content","sha"]`.
 4. Deploy your own: `docs/DEPLOY.md`.
 
