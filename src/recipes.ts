@@ -63,8 +63,10 @@ export function fill(name: string, args: Record<string, string | number | boolea
   if (!r) return { ok: false, status: 404, error: `no recipe '${name}'`, recipes: Object.keys(RECIPES) };
   const resolved: Record<string, string> = {};
   for (const [k, a] of Object.entries(r.args)) {
-    const v = args[k] !== undefined ? String(args[k]) : a.default;
-    if (v === undefined || v === "") { if (a.required) return { ok: false, status: 400, error: `missing arg '${k}'`, arg: k, about: a.about, args: r.args }; continue; }
+    // "" is absent (Bugbot #14, low): an empty optional arg takes its default; an empty required one is missing.
+    const given = args[k] !== undefined && String(args[k]) !== "" ? String(args[k]) : undefined;
+    const v = given ?? a.default;
+    if (v === undefined) { if (a.required) return { ok: false, status: 400, error: `missing arg '${k}'`, arg: k, about: a.about, args: r.args }; continue; }
     if (a.pattern && !a.pattern.test(v)) return { ok: false, status: 400, error: `arg '${k}' does not match its shape`, arg: k, about: a.about, args: r.args };
     if (/[/?#]/.test(v) && k !== "path") return { ok: false, status: 400, error: `arg '${k}' may not contain '/', '?' or '#'`, arg: k, about: a.about, args: r.args };
     if (k === "path" && (/[?#]/.test(v) || v.includes("..") || v.startsWith("/"))) return { ok: false, status: 400, error: `arg 'path' is a repo-relative file path; no '?', '#', '..' or leading '/'`, arg: k, about: a.about, args: r.args };
