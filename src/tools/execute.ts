@@ -12,7 +12,8 @@ import { project } from "../projection";
 import { capBody, readContinue } from "../cap";
 import { linkNext, nearestPaths } from "../upstream";
 
-export const VERSION = "0.3.0";
+import { VERSION } from "../version";
+export { VERSION };
 const API = "/api/v1";
 const ARCHIVE = /^\/[\w.-]+\/[\w.-]+\/archive\/[^/?#]+\.zip$/;
 const REFRESH_HINT = "refreshed: upstream token was expired; one silent refresh, one retry";
