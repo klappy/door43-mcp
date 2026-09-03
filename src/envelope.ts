@@ -1,0 +1,54 @@
+/**
+ * The one response envelope every tool returns (SPEC §Tools, convention §7).
+ * Field names are door43's own: upstream HTTP semantics live here on purpose
+ * (ticket 2026-09-02-door43-mcp-gate1-execute, Ingredients: house prior art).
+ */
+export interface ExecuteCall {
+  method: "GET" | "HEAD";
+  path: string;
+  query?: Record<string, string | number | boolean>;
+  fields?: string[];
+  /** Opaque resume token minted by a truncated answer. */
+  continue?: string;
+}
+
+export interface Envelope {
+  observed_at: string;
+  upstream: { host: string; version: string | null };
+  request: { tool: string; method: string; path: string; query: Record<string, unknown>; fields: string[] };
+  status: number;
+  body: unknown;
+  truncated: boolean;
+  next: ExecuteCall | null;
+  continue: ExecuteCall | null;
+  hints: string[];
+  cost: { bytes: number; tokens_est: number; upstream_ms: number };
+}
+
+/** Keys pinned by test/execute.test.ts — drift here is a SPEC §7 bug, not a feature. */
+export const ENVELOPE_KEYS = [
+  "observed_at", "upstream", "request", "status", "body", "truncated", "next", "continue", "hints", "cost",
+] as const;
+
+export function envelope(
+  p: Pick<Envelope, "upstream" | "request" | "status" | "body"> & Partial<Envelope>,
+): Envelope {
+  const bytes = p.cost?.bytes ?? byteLength(p.body);
+  return {
+    observed_at: p.observed_at ?? new Date().toISOString(),
+    upstream: p.upstream,
+    request: p.request,
+    status: p.status,
+    body: p.body,
+    truncated: p.truncated ?? false,
+    next: p.next ?? null,
+    continue: p.continue ?? null,
+    hints: p.hints ?? [],
+    cost: { bytes, tokens_est: Math.ceil(bytes / 4), upstream_ms: p.cost?.upstream_ms ?? 0 },
+  };
+}
+
+export function byteLength(body: unknown): number {
+  const s = typeof body === "string" ? body : JSON.stringify(body ?? null);
+  return new TextEncoder().encode(s).length;
+}
