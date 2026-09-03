@@ -24,7 +24,7 @@ export interface Surface {
   isNot: string;
   connect: string[];
   tools: Array<{ name: keyof typeof DESCRIPTIONS; line: string }>;
-  journeys: Array<{ recipe: string; about: string; call: string }>;
+  journeys: Array<{ recipe: string; about: string; args: string; call: string }>;
   law: string;
 }
 
@@ -52,6 +52,12 @@ export function callText(recipe: string): string {
   return `execute ${c.method} ${c.path}${q}${f}`;
 }
 
+/** A recipe's args, spelled `owner* repo* ref=master` (* = required; `=` = default). Empty → `—`. */
+export function argsText(recipe: string): string {
+  const a = Object.entries(RECIPES[recipe].args).map(([k, v]) => `${k}${v.required ? "*" : ""}${v.default !== undefined ? `=${v.default}` : ""}`);
+  return a.length ? a.join(" ") : "—";
+}
+
 export function surface(): Surface {
   const s = sections(surfaceMd);
   for (const k of ["what", "is not", "connect"]) if (!s[k]) throw new Error(`docs/SURFACE.md is missing "## ${k}"`);
@@ -62,7 +68,7 @@ export function surface(): Surface {
     isNot: paragraph(s["is not"]),
     connect: numbered(s["connect"]),
     tools: (Object.keys(DESCRIPTIONS) as Array<keyof typeof DESCRIPTIONS>).map((name) => ({ name, line: DESCRIPTIONS[name] })),
-    journeys: Object.entries(RECIPES).map(([recipe, r]) => ({ recipe, about: r.about, call: callText(recipe) })),
+    journeys: Object.entries(RECIPES).map(([recipe, r]) => ({ recipe, about: r.about, args: argsText(recipe), call: callText(recipe) })),
     law: CEILING_URI,
   };
 }
@@ -85,9 +91,9 @@ export function renderReadme(serverUrl = "https://door43.klappy.dev"): string {
   L.push(`| Tool | What it does |`, `|---|---|`);
   for (const t of s.tools) L.push(`| \`${t.name}\` | ${t.line} |`);
   L.push("", `Lines are \`src/descriptions.ts\` verbatim — the same text your client shows.`, "");
-  L.push(`## Journeys`, "", `Each is a \`docs({recipe})\` the server fills for you; the call it returns is shown.`, "");
-  L.push(`| Recipe | Does | Call |`, `|---|---|---|`);
-  for (const j of s.journeys) L.push(`| \`${j.recipe}\` | ${j.about} | \`${j.call}\` |`);
+  L.push(`## Journeys`, "", `Each is a \`docs({recipe, args})\` the server fills for you (\`*\` = required arg, \`=\` = default); the call it returns is shown with its templates. \`execute({recipe, args, dry_run:true})\` prices it first.`, "");
+  L.push(`| Recipe | Does | Args | Call |`, `|---|---|---|---|`);
+  for (const j of s.journeys) L.push(`| \`${j.recipe}\` | ${j.about} | \`${j.args}\` | \`${j.call}\` |`);
   L.push("", `## Deploy your own`, "", `Fork, register one OAuth app on your DCS host, set three secrets, push. Every step: [docs/DEPLOY.md](docs/DEPLOY.md).`, "");
   L.push(`## Governance`, "", `Governed by \`${s.law}\` and ${CONVENTION}. Tension found → [docs/TENSIONS.md](docs/TENSIONS.md) + an issue tagged per [docs/OWNERS.md](docs/OWNERS.md).`, "");
   L.push(`**Agents start at [AGENTS.md](AGENTS.md).**`, "");

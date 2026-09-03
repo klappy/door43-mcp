@@ -1,8 +1,10 @@
 /**
- * `execute({ method, path, query?, fields?, headers?, continue? })` — the one verb.
+ * `execute({ method, path, query?, fields?, headers?, continue?, pin?, recipe?, args?, dry_run? })` — the one verb.
  * GET/HEAD to the upstream as the logged-in user; envelope on every answer;
  * `fields` projection; 200 KB cap with `continue`; refresh-on-401 once; teaching errors.
- * SPEC §execute · convention §2 §3 §7 §9 · TENSIONS T2 T6.
+ * v2.3 `pin:{sha}` rewrites the ref to the sha the caller already holds (never minted here).
+ * v2.4 `{recipe, args, dry_run:true}` prices the filled plan from telemetry — zero upstream fetches.
+ * SPEC §execute · convention §2 §3 §7 §9 · TENSIONS T2 T6 · DELTA seeds 2, 4.
  *
  * The core is `runExecute(deps, input)` so tests drive it with an injected fetch and
  * assert what reached the upstream (write-leak and 405 tests assert *no* fetch).
@@ -11,6 +13,8 @@ import { envelope, byteLength, type Envelope, type ExecuteCall, type Upstream } 
 import { project } from "../projection";
 import { capBody, readContinue } from "../cap";
 import { linkNext, nearestPaths } from "../upstream";
+import { fill, SHA40, type Plan } from "../recipes";
+import { pathFamily, type PathFamily } from "../telemetry";
 
 import { VERSION } from "../version";
 export { VERSION };
@@ -19,12 +23,19 @@ const ARCHIVE = /^\/[\w.-]+\/[\w.-]+\/archive\/[^/?#]+\.zip$/;
 const REFRESH_HINT = "refreshed: upstream token was expired; one silent refresh, one retry";
 
 export interface ExecuteInput {
-  method: string;
-  path: string;
+  /** Required for a single call; omitted for `{recipe, args, dry_run}`. */
+  method?: string;
+  path?: string;
   query?: Record<string, string | number | boolean>;
   fields?: string[];
   headers?: Record<string, string>;
   continue?: string;
+  /** v2.3: the sha this call is pinned to; `ref` (query) or `{ref}` (archive path) is rewritten to it. */
+  pin?: { sha: string };
+  /** v2.4: a recipe name + its args; with `dry_run:true` → plan + estimate, no fetch. The run itself is v2.5. */
+  recipe?: string;
+  args?: Record<string, string | number | boolean>;
+  dry_run?: boolean;
 }
 
 export interface Grant { accessToken: string; refreshToken?: string }
@@ -39,13 +50,37 @@ export interface ExecuteDeps {
   swagger: () => Promise<string[]>;
   consumer?: string;
   loginUrl?: string;
+  /** v2.4 estimate basis: p50 `bytes_out` per path family from this deployment's telemetry (30 d). Absent → "no history". */
+  p50BytesByFamily?: () => Promise<Partial<Record<PathFamily, number>>>;
 }
+export const ESTIMATE_BASIS = "telemetry p50 bytes_out by path_family, last 30d, this host";
 
 /** Only these headers may be forwarded; everything else is dropped (T2: passthrough, not a tunnel). */
 const HEADER_ALLOW = new Set(["accept", "accept-language", "if-none-match", "if-modified-since", "range"]);
 
 function requestEcho(input: ExecuteInput) {
-  return { tool: "execute", method: input.method.toUpperCase(), path: input.path, query: input.query ?? {}, fields: input.fields ?? [] };
+  return { tool: "execute", method: (input.method ?? "-").toUpperCase(), path: input.path ?? "", query: { ...(input.query ?? {}), ...(input.pin ? { pin: input.pin.sha } : {}), ...(input.recipe ? { recipe: input.recipe } : {}), ...(input.args ? { args: input.args } : {}), ...(input.dry_run ? { dry_run: true } : {}) }, fields: input.fields ?? [] };
+}
+
+/** v2.3: apply `pin:{sha}` — rewrite the ref the caller addressed to the sha they already hold. Pure; no fetch.
+ *  `/repos/*` → `query.ref = sha` (set or overridden); archive `/{o}/{r}/archive/{ref}.zip` → `{ref}` = sha.
+ *  Anything else has no ref to pin → refused with the reason. */
+export function applyPin(path: string, query: Record<string, string | number | boolean> | undefined, sha: string): { path: string; query: Record<string, string | number | boolean>; was: string | null } | { refuse: string } {
+  if (!SHA40.test(sha)) return { refuse: "pin.sha must be a 40-hex commit sha the upstream already gave you (catalog commit_sha, git/refs); nothing is minted here" };
+  const q = { ...(query ?? {}) };
+  if (ARCHIVE.test(path)) { const segs = path.split("/"); const was = segs[4].slice(0, -4); segs[4] = `${sha}.zip`; return { path: segs.join("/"), query: q, was }; }
+  const p = path.startsWith(API) ? path.slice(API.length) : path;
+  if (p.startsWith("/repos/")) { const was = q.ref !== undefined ? String(q.ref) : null; q.ref = sha; return { path, query: q, was }; }
+  return { refuse: "pin applies to /repos/* (query ref) and /{owner}/{repo}/archive/{ref}.zip; this path carries no ref to pin" };
+}
+
+/** v2.4 `dry_run`: price a plan from named history. `basis` is a string; a family with no rows → `estimate:null`. */
+export async function estimatePlan(plan: Plan, p50?: () => Promise<Partial<Record<PathFamily, number>>>): Promise<{ estimate: { bytes: number; calls: number; basis: string } | null; basis: string }> {
+  const fams = plan.calls.map((c) => pathFamily(c.path));
+  const hist = p50 ? await p50().catch(() => ({} as Partial<Record<PathFamily, number>>)) : {};
+  const missing = fams.filter((f) => hist[f] === undefined);
+  if (missing.length) return { estimate: null, basis: `no history${Object.keys(hist).length ? ` for ${[...new Set(missing)].join(", ")}` : ""}` };
+  return { estimate: { bytes: fams.reduce((a, f) => a + (hist[f] as number), 0), calls: plan.calls.length, basis: ESTIMATE_BASIS }, basis: ESTIMATE_BASIS };
 }
 
 /** Resolve the caller's path to an upstream URL, or return the reason it is refused. */
@@ -110,13 +145,35 @@ export function fieldsTeach(body: unknown, fields: string[] | undefined): string
   return out;
 }
 
-const SHA40 = /^[0-9a-f]{40}$/i;
-
 export async function runExecute(deps: ExecuteDeps, input: ExecuteInput): Promise<Envelope> {
-  const req = requestEcho(input);
   const upstream: Upstream = { host: deps.host, version: deps.version };
-  const method = req.method;
 
+  // v2.4 — recipe + args. Only `dry_run` in this plate; the run is v2.5. Nothing below this touches the upstream.
+  if (input.recipe !== undefined || input.dry_run) {
+    const req0 = requestEcho({ ...input, method: input.method ?? "-", path: input.path ?? "" });
+    if (input.recipe === undefined) return envelope({ upstream, request: req0, status: 400, body: { error: "dry_run needs a recipe" }, hints: ["execute({recipe, args, dry_run:true}); docs({rung:\"recipes\"}) lists them; nothing was sent upstream"] });
+    const f = fill(input.recipe, input.args);
+    if (!f.ok) return envelope({ upstream, request: req0, status: f.status, body: f.status === 404 ? { recipes: f.recipes } : { error: f.error, arg: f.arg, about: f.about }, hints: [f.status === 404 ? "no such recipe; pick one of the listed" : `add args:{${f.arg}:…} and replay; nothing was sent upstream`] });
+    if (!input.dry_run) return envelope({ upstream, request: req0, status: 501, body: { plan: f.plan }, hints: ["recipe run lands in v2.5; until then paste plan.calls into execute in order, or add dry_run:true to price it; nothing was sent upstream"] });
+    const est = await estimatePlan(f.plan, deps.p50BytesByFamily);
+    const body = { plan: f.plan, estimate: est.estimate, ...(est.estimate ? {} : { basis: est.basis }) };
+    return envelope({ upstream, request: req0, status: 200, body, hints: [est.estimate ? `estimate is a named basis (${est.basis}), never a promise; 0 upstream fetches` : `${est.basis}; run the plan once and the next dry run has a basis; 0 upstream fetches`] });
+  }
+
+  // v2.3 — pin: rewrite before anything else reads path/query. Refused pins cost nothing.
+  let pinHint: string | null = null;
+  if (input.pin) {
+    const pinned = applyPin(input.path ?? "", input.query, input.pin.sha);
+    if ("refuse" in pinned) return envelope({ upstream, request: requestEcho(input), status: 400, body: { error: pinned.refuse }, hints: ["nothing was sent upstream"] });
+    input = { ...input, path: pinned.path, query: pinned.query };
+    pinHint = `pinned to ${pinned.query.ref !== undefined && !ARCHIVE.test(pinned.path) ? String(pinned.query.ref).slice(0, 12) : pinned.path.split("/")[4].slice(0, 12)}${pinned.was ? ` (was ref '${pinned.was}')` : ""}; the same call tomorrow answers the same`;
+  }
+
+  const req = requestEcho(input);
+  const method = req.method;
+  if (!input.method || typeof input.path !== "string") {
+    return envelope({ upstream, request: req, status: 400, body: { error: "a single call needs `method` and `path`; a recipe needs `recipe` (+ `args`, `dry_run`)" }, hints: ["nothing was sent upstream"] });
+  }
   if (method !== "GET" && method !== "HEAD") {
     return envelope({ upstream, request: req, status: 405, body: { error: `${method} is not in v1` },
       hints: ["v2 gates writes (convention §3: reads before writes; mutating verbs mirror the upstream's own confirmations)"] });
@@ -135,7 +192,7 @@ export async function runExecute(deps: ExecuteDeps, input: ExecuteInput): Promis
   const headers: Record<string, string> = { accept: "application/json", "user-agent": `door43-mcp/${VERSION} (+https://door43.klappy.dev; consumer=${deps.consumer ?? "unknown"})` };
   for (const [k, v] of Object.entries(input.headers ?? {})) if (HEADER_ALLOW.has(k.toLowerCase())) headers[k.toLowerCase()] = v;
 
-  const hints: string[] = [];
+  const hints: string[] = pinHint ? [pinHint] : [];
   let grant = deps.grant;
   const call = async () => {
     const t0 = Date.now();

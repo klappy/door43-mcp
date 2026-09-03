@@ -1,21 +1,24 @@
 /**
- * `docs({ rung?, path?, query?, recipe? })` — the server explains itself and DCS, live.
+ * `docs({ rung?, path?, query?, recipe?, args?, detail?, fields? })` — the server explains itself and DCS, live.
  * Ladder: no args → L0 boarding pass (≤ 2 KB) · rung:"map" → L1 path families ·
  * path → L2 one path (params, response keys, quirks) · rung:"raw" + path → L3 swagger slice ·
- * query → lexical (BM25) over path names + summaries · recipe → filled `execute` calls.
+ * query → lexical (BM25) over path names + summaries · recipe (+args) → the filled plan (v2.4) ·
+ * rung:"recipes" → every recipe's about + args schema, no calls.
  * `docs` never calls DCS except for the swagger fetch (convention §2, ticket failure mode 1):
  * every answer here is built from the cached swagger and the session's own state.
  * SPEC §docs · convention §8 · ceiling VERIFICATION (the pass cites the constraint URI).
  */
-import { envelope, type Envelope, type ExecuteCall, type Upstream } from "../envelope";
+import { envelope, type Envelope, type Upstream } from "../envelope";
 import { project } from "../projection";
+import { RECIPES, fill, recipeSchema } from "../recipes";
+export { RECIPES };
 import type { SwaggerDoc, SwaggerOp } from "../upstream";
 
 export const CEILING_URI = "klappy://canon/constraints/mcp-tool-surface-ceiling";
 export const SEAT_WORK_URI = "klappy://canon/constraints/infra-config-is-seat-work";
 export const PASS_CAP_BYTES = 2048;
 
-export interface DocsInput { rung?: "map" | "raw"; path?: string; query?: string; recipe?: string; detail?: "compact" | "full"; fields?: string[] }
+export interface DocsInput { rung?: "map" | "raw" | "recipes"; path?: string; query?: string; recipe?: string; args?: Record<string, string | number | boolean>; detail?: "compact" | "full"; fields?: string[] }
 export interface DocsDeps {
   host: string;
   version: string;
@@ -52,20 +55,9 @@ const QUIRKS: Record<string, string[]> = {
   ],
 };
 
-export const RECIPES: Record<string, { about: string; calls: ExecuteCall[] }> = {
-  whoami: { about: "Who is the logged-in user.", calls: [{ method: "GET", path: "/user", fields: ["login", "id", "full_name"] }] },
-  "catalog-by-language": { about: "Latest catalog entries for one language (default `en`, stage `prod`); swap `lang`.",
-    calls: [{ method: "GET", path: "/catalog/search", query: { lang: "en", stage: "prod", limit: 20 }, fields: ["data[].full_name", "data[].subject", "data[].branch_or_tag_name", "data[].zipball_url"] }] },
-  "latest-release-zip": { about: "The latest release of a repo and its zipball (default unfoldingWord/en_ult; swap owner/repo).",
-    calls: [{ method: "GET", path: "/repos/unfoldingWord/en_ult/releases/latest", fields: ["tag_name", "name", "published_at", "zipball_url"] }] },
-  "repo-tree-at-ref": { about: "The file tree of a repo at a ref (default unfoldingWord/en_ult@master; swap the sha/ref and use `recursive:true` for the whole tree).",
-    calls: [{ method: "GET", path: "/repos/unfoldingWord/en_ult/git/trees/master", query: { recursive: true, per_page: 1000 }, fields: ["sha", "truncated", "tree[].path", "tree[].type", "tree[].sha"] }] },
-  "page-through": { about: "Walk a paged list: call once, then replay `next` from each envelope until it is null; `hints` carries `x-total-count`.",
-    calls: [{ method: "GET", path: "/catalog/search", query: { limit: 50, page: 1 }, fields: ["data[].full_name"] }] },
-};
 
 function request(input: DocsInput) {
-  return { tool: "docs", method: "-", path: input.path ?? "", query: { ...(input.rung ? { rung: input.rung } : {}), ...(input.query ? { query: input.query } : {}), ...(input.recipe ? { recipe: input.recipe } : {}), ...(input.detail ? { detail: input.detail } : {}) }, fields: input.fields ?? [] };
+  return { tool: "docs", method: "-", path: input.path ?? "", query: { ...(input.rung ? { rung: input.rung } : {}), ...(input.query ? { query: input.query } : {}), ...(input.recipe ? { recipe: input.recipe } : {}), ...(input.args ? { args: input.args } : {}), ...(input.detail ? { detail: input.detail } : {}) }, fields: input.fields ?? [] };
 }
 
 const norm = (p: string) => (p.startsWith("/api/v1") ? p.slice(7) : p) || "/";
@@ -79,14 +71,16 @@ function boardingPass(d: DocsDeps) {
     upstream: { host: d.host, version: d.upstreamVersion },
     auth: d.login ? { logged_in_as: d.login } : { login_url: d.loginUrl },
     tools: {
-      docs: "{rung?:map|raw, path?, query?, recipe?} → this pass · map · one path · swagger slice · search · filled calls",
-      execute: "{method:GET|HEAD, path, query?, fields?, headers?, continue?} → envelope; path = /api/v1/… or /{o}/{r}/archive/{ref}.zip",
+      docs: "{rung?:map|raw|recipes, path?, query?, recipe?, args?} → this pass · map · one path · swagger slice · search · recipe schema · filled plan",
+      execute: "{method:GET|HEAD, path, query?, fields?, headers?, continue?, pin?:{sha}, recipe?, args?, dry_run?} → envelope; path = /api/v1/… or /{o}/{r}/archive/{ref}.zip",
       telemetry: "{sql} → rows; SELECT only over door43mcp_telemetry",
     },
     map: "catalog · repos · user · users · orgs · misc — docs({rung:\"map\"})",
+    recipes: Object.keys(RECIPES),
     journeys: [
       { docs: { recipe: "whoami" } },
-      { docs: { recipe: "latest-release-zip" } },
+      { docs: { recipe: "latest-release-zip", args: { owner: "unfoldingWord", repo: "en_ult" } } },
+      { execute: { recipe: "latest-release-zip", args: { owner: "unfoldingWord", repo: "en_ult" }, dry_run: true } },
       { execute: { method: "GET", path: "/catalog/search", query: { lang: "en", limit: 5 }, fields: ["data[].full_name"] } },
       { telemetry: { sql: "SELECT tool_name, COUNT(*) FROM door43mcp_telemetry GROUP BY 1" } },
     ],
@@ -168,9 +162,16 @@ export async function runDocs(d: DocsDeps, input: DocsInput = {}): Promise<Envel
   const hints: string[] = [];
 
   if (input.recipe !== undefined) {
-    const r = RECIPES[input.recipe];
-    if (!r) return envelope({ upstream, request: req, status: 404, body: { recipes: Object.keys(RECIPES) }, hints: [`no recipe '${input.recipe}'; pick one of the listed`] });
-    return envelope({ upstream, request: req, status: 200, body: { recipe: input.recipe, about: r.about, calls: r.calls }, hints: ["paste each call into execute in order; swap owner/repo/lang where the recipe says so"] });
+    // v2.4: the filled plan. Zero fetches — the table and the args are all it takes (SPEC §docs v2).
+    const f = fill(input.recipe, input.args);
+    if (!f.ok) {
+      if (f.status === 404) return envelope({ upstream, request: req, status: 404, body: { recipes: f.recipes }, hints: [`no recipe '${input.recipe}'; pick one of the listed, or docs({rung:"recipes"}) for their args`] });
+      return envelope({ upstream, request: req, status: 400, body: { error: f.error, arg: f.arg, about: f.about, args: recipeSchema()[input.recipe]?.args ?? {} }, hints: [`add args:{${f.arg}:…} and replay; nothing was sent upstream`] });
+    }
+    return envelope({ upstream, request: req, status: 200, body: f.plan, hints: ["paste each call into execute in order, or execute({recipe, args, dry_run:true}) to price it first"] });
+  }
+  if (input.rung === "recipes") {
+    return envelope({ upstream, request: req, status: 200, body: { recipes: recipeSchema() }, hints: ["docs({recipe, args}) fills one; required args without a default must be given"] });
   }
   if (!input.rung && !input.path && !input.query) {
     const body = boardingPass(d);

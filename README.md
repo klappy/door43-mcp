@@ -33,15 +33,16 @@ Lines are `src/descriptions.ts` verbatim — the same text your client shows.
 
 ## Journeys
 
-Each is a `docs({recipe})` the server fills for you; the call it returns is shown.
+Each is a `docs({recipe, args})` the server fills for you (`*` = required arg, `=` = default); the call it returns is shown with its templates. `execute({recipe, args, dry_run:true})` prices it first.
 
-| Recipe | Does | Call |
-|---|---|---|
-| `whoami` | Who is the logged-in user. | `execute GET /user fields:["login","id","full_name"]` |
-| `catalog-by-language` | Latest catalog entries for one language (default `en`, stage `prod`); swap `lang`. | `execute GET /catalog/search?lang=en&stage=prod&limit=20 fields:["data[].full_name","data[].subject","data[].branch_or_tag_name","data[].zipball_url"]` |
-| `latest-release-zip` | The latest release of a repo and its zipball (default unfoldingWord/en_ult; swap owner/repo). | `execute GET /repos/unfoldingWord/en_ult/releases/latest fields:["tag_name","name","published_at","zipball_url"]` |
-| `repo-tree-at-ref` | The file tree of a repo at a ref (default unfoldingWord/en_ult@master; swap the sha/ref and use `recursive:true` for the whole tree). | `execute GET /repos/unfoldingWord/en_ult/git/trees/master?recursive=true&per_page=1000 fields:["sha","truncated","tree[].path","tree[].type","tree[].sha"]` |
-| `page-through` | Walk a paged list: call once, then replay `next` from each envelope until it is null; `hints` carries `x-total-count`. | `execute GET /catalog/search?limit=50&page=1 fields:["data[].full_name"]` |
+| Recipe | Does | Args | Call |
+|---|---|---|---|
+| `whoami` | Who is the logged-in user. | `—` | `execute GET /user fields:["login","id","full_name"]` |
+| `catalog-by-language` | Latest catalog entries for one language. | `lang=en stage=prod` | `execute GET /catalog/search?lang={lang}&stage={stage}&limit=20 fields:["data[].full_name","data[].subject","data[].branch_or_tag_name","data[].zipball_url"]` |
+| `latest-release-zip` | The latest release of a repo and its zipball. | `owner* repo*` | `execute GET /repos/{owner}/{repo}/releases/latest fields:["tag_name","name","published_at","zipball_url"]` |
+| `repo-tree-at-ref` | The file tree of a repo at a ref (use `recursive:true` for the whole tree). | `owner* repo* ref=master` | `execute GET /repos/{owner}/{repo}/git/trees/{ref}?recursive=true&per_page=1000 fields:["sha","truncated","tree[].path","tree[].type","tree[].sha"]` |
+| `page-through` | Walk a paged list: call once, then replay `next` from each envelope until it is null; `hints` carries `x-total-count`. | `limit=50` | `execute GET /catalog/search?limit={limit}&page=1 fields:["data[].full_name"]` |
+| `read-file-at-pin` | One file's content at a pinned sha (the ref the upstream already gave you; never minted here). | `owner* repo* path* sha*` | `execute GET /repos/{owner}/{repo}/contents/{path}?ref={sha} fields:["name","sha","size","encoding","content"]` |
 
 ## Deploy your own
 

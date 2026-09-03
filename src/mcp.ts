@@ -15,7 +15,7 @@ import { byteLength } from "./envelope";
 import { runExecute, VERSION, type Grant } from "./tools/execute";
 import { runDocs } from "./tools/docs";
 import { runTelemetry } from "./tools/telemetry";
-import { writeRow, type TelemetryDb } from "./telemetry";
+import { writeRow, p50BytesByFamily, type TelemetryDb } from "./telemetry";
 import { DESCRIPTIONS } from "./descriptions";
 import { refreshDcs, swaggerDoc, swaggerPaths, upstreamVersion } from "./upstream";
 
@@ -68,10 +68,11 @@ export class Door43MCP extends McpAgent<Env, Record<string, never>, GrantProps> 
         description: DESCRIPTIONS.docs,
         annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
         inputSchema: {
-          rung: z.enum(["map", "raw"]).optional().describe("map = L1 path families; raw (with path) = L3 swagger slice; omit for the boarding pass"),
+          rung: z.enum(["map", "raw", "recipes"]).optional().describe("map = L1 path families; raw (with path) = L3 swagger slice; recipes = every recipe's args; omit for the boarding pass"),
           path: z.string().optional().describe("L2: one documented path, e.g. /catalog/search"),
           query: z.string().optional().describe("Lexical search over path names + summaries"),
-          recipe: z.string().optional().describe("whoami · catalog-by-language · latest-release-zip · repo-tree-at-ref · page-through"),
+          recipe: z.string().optional().describe("whoami · catalog-by-language · latest-release-zip · repo-tree-at-ref · page-through · read-file-at-pin — with `args`, the filled plan"),
+          args: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional().describe("Recipe args, e.g. {owner:\"unfoldingWord\", repo:\"en_ult\"}; a missing required arg answers 400 naming it"),
           detail: z.enum(["compact", "full"]).optional().describe("L2 only: compact (default) = names and types; full = descriptions + error responses"),
           fields: z.array(z.string()).optional().describe("Project the L2/L3 body, same selectors as execute"),
         },
@@ -92,12 +93,16 @@ export class Door43MCP extends McpAgent<Env, Record<string, never>, GrantProps> 
         description: DESCRIPTIONS.execute,
         annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
         inputSchema: {
-          method: z.enum(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]).describe("GET or HEAD in v1; others answer 405 without touching the upstream"),
-          path: z.string().describe("Upstream path: /api/v1/… (prefix optional: /user, /catalog/search) or /{owner}/{repo}/archive/{ref}.zip (HEAD → body.url); parameters go in `query`"),
+          method: z.enum(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]).optional().describe("GET or HEAD in v1; others answer 405 without touching the upstream; omit for {recipe, args, dry_run}"),
+          path: z.string().optional().describe("Upstream path: /api/v1/… (prefix optional: /user, /catalog/search) or /{owner}/{repo}/archive/{ref}.zip (HEAD → body.url); parameters go in `query`"),
           query: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
           fields: z.array(z.string()).optional().describe("JSON paths to keep, e.g. [\"data[].name\",\"data[].owner\"] — selection only"),
           headers: z.record(z.string(), z.string()).optional().describe("Forwarded only: accept, accept-language, if-none-match, if-modified-since, range"),
           continue: z.string().optional().describe("Opaque token from a truncated answer's `continue`"),
+          pin: z.object({ sha: z.string() }).optional().describe("Pin this read to a 40-hex sha you already hold: ref (query) or {ref} (archive) is rewritten to it; no fetch is spent"),
+          recipe: z.string().optional().describe("With `args` and `dry_run:true`: the filled plan + estimate{bytes,calls,basis}, zero upstream fetches"),
+          args: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional().describe("Recipe args"),
+          dry_run: z.boolean().optional().describe("Price the recipe without spending"),
         },
       },
       async (input) => {
@@ -107,6 +112,7 @@ export class Door43MCP extends McpAgent<Env, Record<string, never>, GrantProps> 
           {
             host, version: await upstreamVersion(host), fetch: (u, i) => fetch(u, i), grant,
             consumer: this.props?.login ?? "unknown", loginUrl: `${SERVER_URL}/authorize`, swagger: () => swaggerPaths(host),
+            p50BytesByFamily: env.TELEMETRY_DB ? () => p50BytesByFamily(env.TELEMETRY_DB as TelemetryDb) : undefined,
             refresh: async (g) => {
               if (!g.refreshToken) return null;
               const t = await refreshDcs(host, env.D43_CLIENT_ID, env.D43_CLIENT_SECRET, g.refreshToken);
