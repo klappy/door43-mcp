@@ -83,14 +83,22 @@ export async function writeRow(db: TelemetryDb, e: Emit): Promise<void> {
   await db.prepare(`INSERT INTO ${TABLE} (${cols}) VALUES (${marks})`).bind(...TELEMETRY_COLUMNS.map((c) => row[c])).run();
 }
 
-const FORBIDDEN = /\b(insert|update|delete|drop|create|alter|attach|detach|pragma|replace|vacuum|reindex|truncate|grant|revoke|begin|commit|rollback|savepoint|release)\b/i;
-/** SELECT only, single statement, no `;`, no mutating or admin keyword anywhere (the allowlist is the shape, the denylist is belt-and-braces). */
+const FORBIDDEN = /\b(insert|update|delete|drop|create|alter|attach|detach|pragma|replace|vacuum|reindex|truncate|grant|revoke|begin|commit|rollback|savepoint|release)\b(?!\s*\()/i;
+/** SELECT only, single statement, no `;`, no mutating or admin keyword outside quotes/comments (the allowlist is the shape, the denylist is belt-and-braces). */
 export function isReadOnlySql(sql: string): { ok: true } | { ok: false; reason: string } {
   const s = sql.trim();
   if (!s) return { ok: false, reason: "empty sql" };
   if (s.includes(";")) return { ok: false, reason: "one statement only — ';' is refused" };
   if (!/^(select|with)\b/i.test(s)) return { ok: false, reason: "SELECT only" };
-  const m = s.match(FORBIDDEN);
+  // Quotes first so `'-- grant'` / `'grant'` stay literals; then comments. `(?!\s*\()` keeps REPLACE(…).
+  const bare = s
+    .replace(/'(?:[^']|'')*'/g, " ")
+    .replace(/"(?:[^"]|"")*"/g, " ")
+    .replace(/`[^`]*`/g, " ")
+    .replace(/\[[^\]]*\]/g, " ")
+    .replace(/--[^\n]*/g, " ")
+    .replace(/\/\*[\s\S]*?\*\//g, " ");
+  const m = bare.match(FORBIDDEN);
   if (m) return { ok: false, reason: `'${m[1].toUpperCase()}' is not allowed — telemetry is read-only` };
   return { ok: true };
 }

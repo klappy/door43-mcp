@@ -146,6 +146,19 @@ describe("telemetry read gate (acceptance 6, ticket failure mode 3)", () => {
     expect((e.body as any).exact).toBe(true);
     expect(e.hints.join(" ")).toMatch(/COUNT\(\*\) is a true count/);
   });
+  it("accepts SELECT filtered by stored values that collide with the denylist", async () => {
+    const { db, stmts } = fakeDb();
+    for (const sql of [
+      "SELECT * FROM door43mcp_telemetry WHERE consumer_source = 'grant'",
+      "SELECT REPLACE(tool_name, 'x', 'y') FROM door43mcp_telemetry",
+      "SELECT * FROM door43mcp_telemetry WHERE tool_name = 'release'",
+    ]) {
+      expect(isReadOnlySql(sql).ok, sql).toBe(true);
+      const e = await runTelemetry({ host: "git.door43.org", upstreamVersion: "1.27.2+dcs", db }, { sql });
+      expect(e.status).toBe(200);
+    }
+    expect(stmts.length).toBe(3);
+  });
 });
 
 describe("telemetry write (one row per call; column allowlist; no raw path)", () => {
