@@ -13,11 +13,12 @@
  * The core is `runExecute(deps, input)` so tests drive it with an injected fetch and
  * assert what reached the upstream (write-leak and 405 tests assert *no* fetch).
  */
-import { envelope, byteLength, type Envelope, type ExecuteCall, type RecipeCall, type Upstream } from "../envelope";
+import { envelope, byteLength, type Envelope, type ExecuteCall, type RecipeCall, type Handoff, type Upstream } from "../envelope";
 import { project } from "../projection";
 import { capBody, readContinue, mintRunContinue, readRunContinue, BODY_CAP_BYTES } from "../cap";
 import { linkNext, nearestPaths } from "../upstream";
 import { fill, SHA40, RECIPES, type Plan, type Recipe } from "../recipes";
+import { pickPath } from "../projection";
 import { pathFamily, type PathFamily } from "../telemetry";
 
 import { VERSION } from "../version";
@@ -84,7 +85,7 @@ export function applyPin(path: string, query: Record<string, string | number | b
 
 /** v2.4 `dry_run`: price a plan from named history. `basis` is a string; a family with no rows → `estimate:null`. */
 export async function estimatePlan(plan: Plan, p50?: () => Promise<Partial<Record<PathFamily, number>>>): Promise<{ estimate: { bytes: number; calls: number; basis: string } | null; basis: string }> {
-  const fams = plan.calls.map((c) => pathFamily(c.path));
+  const fams = plan.calls.map((c) => pathFamily("tool" in c ? undefined : c.path));
   const hist = p50 ? await p50().catch(() => ({} as Partial<Record<PathFamily, number>>)) : {};
   const missing = fams.filter((f) => hist[f] === undefined);
   if (missing.length) return { estimate: null, basis: `no history${Object.keys(hist).length ? ` for ${[...new Set(missing)].join(", ")}` : ""}` };
@@ -162,6 +163,7 @@ export async function runExecute(deps: ExecuteDeps, input: ExecuteInput): Promis
     if (input.recipe === undefined) return envelope({ upstream, request: req0, status: 400, body: { error: "dry_run needs a recipe" }, hints: ["execute({recipe, args, dry_run:true}); docs({rung:\"recipes\"}) lists them; nothing was sent upstream"] });
     const f = fill(input.recipe, input.args, deps.recipes ?? RECIPES);
     if (!f.ok) return envelope({ upstream, request: req0, status: f.status, body: f.status === 404 ? { recipes: f.recipes } : { error: f.error, arg: f.arg, about: f.about }, hints: [f.status === 404 ? "no such recipe; pick one of the listed" : `add args:{${f.arg}:…} and replay; nothing was sent upstream`] });
+    if (f.plan.calls.some((c) => "tool" in c)) return envelope({ upstream, request: req0, status: 400, body: { plan: f.plan }, hints: [`'${f.plan.recipe}' is a telemetry call, not an execute run — paste plan.calls[0].sql into telemetry({sql}); nothing was sent upstream`] });
     if (!input.dry_run) return runRecipe(deps, input, f.plan, upstream, req0);
     const est = await estimatePlan(f.plan, deps.p50BytesByFamily);
     const body = { plan: f.plan, estimate: est.estimate, ...(est.estimate ? {} : { basis: est.basis }) };
@@ -294,7 +296,7 @@ async function runRecipe(deps: ExecuteDeps, input: ExecuteInput, plan: Plan, ups
   let bytes = 0, ms = 0, stopped: { at: number; why: string } | null = null;
   const stepDeps: ExecuteDeps = { ...deps, onStep: undefined, recipes: undefined };
   for (let k = from; k <= plan.calls.length; k++) {
-    const call = plan.calls[k - 1];
+    const call = plan.calls[k - 1] as ExecuteCall;
     const t0 = Date.now();
     const out = await runExecute(stepDeps, { method: call.method, path: call.path, query: call.query, fields: call.fields });
     deps.onStep?.(call, out, t0);
@@ -316,7 +318,18 @@ async function runRecipe(deps: ExecuteDeps, input: ExecuteInput, plan: Plan, ups
     hints.push(`${steps.length} step${steps.length === 1 ? "" : "s"} ran (${from}–${plan.calls.length} of ${plan.calls.length}); cost is the sum of the steps`);
   }
   if (from > 1) hints.push(`resumed at step ${from}; steps[] holds ${from}–${from + steps.length - 1} only`);
-  const body = { recipe: plan.recipe, args: plan.args, from, steps, ...(cont ? { stopped_at: stopped!.at } : {}) };
+  // v2.6 — the recipe ends in a hand-off: a pre-formed sibling-server call built from the last step's body, never a fetch.
+  let handoff: Handoff | null = null;
+  if (done && plan.handoff) {
+    const pk = plan.handoff.pick;
+    const zip = pickPath(last.body, pk.zip_url); const sha = pk.sha ? pickPath(last.body, pk.sha) : null; const ref = pk.ref ? pickPath(last.body, pk.ref) : null;
+    if (typeof zip === "string" && /^https:\/\//.test(zip)) {
+      handoff = { server: plan.handoff.server, url: plan.handoff.url, tool: plan.handoff.tool, input: { capability: plan.handoff.capability, payload: { zip_url: zip } },
+        provenance: { sha: typeof sha === "string" && SHA40.test(sha) ? sha : null, ref: typeof ref === "string" ? ref : null, observed_at: last.observed_at } };
+      hints.push(`hand-off: paste body.handoff.input into ${plan.handoff.server} execute; its map is 'unpinned' provenance — compare its sha note to provenance.sha${handoff.provenance.sha ? ` (${handoff.provenance.sha.slice(0, 12)})` : ""}`);
+    } else hints.push(`no hand-off formed: '${pk.zip_url}' selected nothing on the last step (empty catalog answer? check args)`);
+  }
+  const body = { recipe: plan.recipe, args: plan.args, from, steps, ...(handoff ? { handoff } : {}), ...(cont ? { stopped_at: stopped!.at } : {}) };
   return envelope({ upstream, request: req, status: last.status, body, truncated: !done, next: null, continue: cont, hints,
     cost: { bytes, tokens_est: 0, upstream_ms: ms } });
 }

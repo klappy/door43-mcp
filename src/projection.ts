@@ -74,3 +74,15 @@ export function project(body: unknown, fields: string[] | undefined): unknown {
   }
   return result;
 }
+
+/** v2.6: read one value at a path like `data[0].commit_sha` from a body (projected or not). Pure; undefined when absent. */
+export function pickPath(body: unknown, path: string): unknown {
+  let n: any = body;
+  for (const seg of path.split(".").filter(Boolean)) {
+    const m = seg.match(/^([^\[]+)?(?:\[(\d+)\])?$/); if (!m) return undefined;
+    if (m[1] !== undefined) { if (n === null || typeof n !== "object") return undefined; n = n[m[1]]; }
+    if (m[2] !== undefined) { if (!Array.isArray(n)) return undefined; n = n[Number(m[2])]; }
+    if (n === undefined) return undefined;
+  }
+  return n;
+}

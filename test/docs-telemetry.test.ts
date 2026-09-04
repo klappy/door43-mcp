@@ -88,7 +88,7 @@ describe("docs L1/L2/L3/query (SPEC §docs)", () => {
 
 describe("docs recipes", () => {
   it("ships v1's five recipes (+ read-file-at-pin, SPEC §docs v2); latest-release-zip selects zipball_url", async () => {
-    expect(Object.keys(RECIPES)).toEqual(["whoami", "catalog-by-language", "latest-release-zip", "repo-tree-at-ref", "page-through", "repo-at-a-glance", "read-file-at-pin"]);
+    expect(Object.keys(RECIPES)).toEqual(["whoami", "catalog-by-language", "latest-release-zip", "repo-tree-at-ref", "page-through", "repo-at-a-glance", "map-this-release", "my-spend", "read-file-at-pin"]);
     // v2.4: owner/repo are args, no longer hard-coded (DELTA seed 4) — see test/v2-pins-recipe-args.test.ts for the 400.
     const e = await runDocs(deps(), { recipe: "latest-release-zip", args: { owner: "unfoldingWord", repo: "en_ult" } });
     expect(e.status).toBe(200);
@@ -99,9 +99,9 @@ describe("docs recipes", () => {
     expect((await runDocs(deps(), { recipe: "nope" })).status).toBe(404);
   });
   it("every recipe call is a GET/HEAD execute call the edge would accept", () => {
-    for (const r of Object.values(RECIPES)) for (const c of r.calls) { expect(["GET", "HEAD"]).toContain(c.method); expect(c.path.startsWith("/")).toBe(true); expect(c.path).not.toMatch(/[?#]/); }
+    for (const r of Object.values(RECIPES)) for (const c of r.calls) { if ("tool" in c) { expect(c.tool).toBe("telemetry"); expect(c.sql).toMatch(/^SELECT/); continue; } expect(["GET", "HEAD"]).toContain(c.method); expect(c.path.startsWith("/")).toBe(true); expect(c.path).not.toMatch(/[?#]/); }
     // templates only in a filled position; every template names a declared arg.
-    for (const [n, r] of Object.entries(RECIPES)) for (const c of r.calls) for (const m of `${c.path} ${JSON.stringify(c.query ?? {})}`.matchAll(/\{([a-zA-Z_]+)\}/g)) expect(Object.keys(r.args), `${n} template {${m[1]}}`).toContain(m[1]);
+    for (const [n, r] of Object.entries(RECIPES)) for (const c of r.calls) for (const m of ("tool" in c ? c.sql : `${c.path} ${JSON.stringify(c.query ?? {})}`).matchAll(/\{([a-zA-Z_]+)\}/g)) expect(Object.keys(r.args), `${n} template {${m[1]}}`).toContain(m[1]);
   });
 });
 

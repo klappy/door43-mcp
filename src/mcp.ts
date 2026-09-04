@@ -15,7 +15,7 @@ import { byteLength } from "./envelope";
 import { runExecute, VERSION, type Grant } from "./tools/execute";
 import { runDocs } from "./tools/docs";
 import { runTelemetry } from "./tools/telemetry";
-import { writeRow, p50BytesByFamily, type TelemetryDb } from "./telemetry";
+import { writeRow, p50BytesByFamily, consumerLadder, labelMode, type TelemetryDb } from "./telemetry";
 import { DESCRIPTIONS } from "./descriptions";
 import { refreshDcs, swaggerDoc, swaggerPaths, upstreamVersion } from "./upstream";
 
@@ -44,13 +44,20 @@ export class Door43MCP extends McpAgent<Env, Record<string, never>, GrantProps> 
   private emit(tool: "docs" | "execute" | "telemetry", input: unknown, out: Envelope, t0: number, event_type: "tool_call" | "recipe_run" = "tool_call") {
     const db = this.env.TELEMETRY_DB as TelemetryDb | undefined;
     if (!db) return;
+    const c = this.consumer();
     const p = this.ctx.waitUntil(writeRow(db, {
       event_type, tool_name: tool, method: out.request.method, path: tool === "execute" ? out.request.path : undefined,
       status: out.status, upstream_status: tool === "execute" ? out.status : null, upstream_ms: out.cost.upstream_ms,
       duration_ms: Date.now() - t0, bytes_in: byteLength(input), bytes_out: out.cost.bytes, truncated: out.truncated,
-      consumer_label: this.props?.login ?? "unknown", consumer_source: this.props?.login ? "grant" : "none", worker_version: VERSION,
+      consumer_label: c.label, consumer_source: c.source, worker_version: VERSION,
     }).catch(() => undefined));
     void p;
+  }
+
+  /** v2.7 ladder (VERDICT T18): default the MCP client, never the person; `?consumer=` and the DCS login are operator opt-ins via `TELEMETRY_LABEL`. */
+  private consumer(): { label: string; source: import("./telemetry").ConsumerSource } {
+    const ci = this.server.server.getClientVersion();
+    return consumerLadder(labelMode(this.env.TELEMETRY_LABEL), { login: this.props?.login, query: this.props?.consumerQuery, clientInfo: ci ? { name: ci.name, version: ci.version } : null, userAgent: this.props?.userAgent });
   }
 
   private reply(out: Envelope) {
@@ -80,7 +87,7 @@ export class Door43MCP extends McpAgent<Env, Record<string, never>, GrantProps> 
       async (input) => {
         const t0 = Date.now();
         const out = await runDocs({ host, version: VERSION, upstreamVersion: await upstreamVersion(host), swagger: () => swaggerDoc(host),
-          login: this.props?.login ?? null, loginUrl: `${SERVER_URL}/authorize`, serverUrl: SERVER_URL }, input);
+          login: this.props?.login ?? null, loginUrl: `${SERVER_URL}/authorize`, serverUrl: SERVER_URL, consumerLabel: this.consumer().label }, input);
         this.emit("docs", input, out, t0);
         return this.reply(out);
       },
@@ -111,7 +118,7 @@ export class Door43MCP extends McpAgent<Env, Record<string, never>, GrantProps> 
         const out = await runExecute(
           {
             host, version: await upstreamVersion(host), fetch: (u, i) => fetch(u, i), grant,
-            consumer: this.props?.login ?? "unknown", loginUrl: `${SERVER_URL}/authorize`, swagger: () => swaggerPaths(host),
+            consumer: this.consumer().label, loginUrl: `${SERVER_URL}/authorize`, swagger: () => swaggerPaths(host),
             p50BytesByFamily: env.TELEMETRY_DB ? () => p50BytesByFamily(env.TELEMETRY_DB as TelemetryDb) : undefined,
             // v2.5: one `tool_call` row per step, off the response path; the run row lands below.
             onStep: (call, stepOut, ts) => this.emit("execute", call, stepOut, ts),

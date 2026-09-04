@@ -10,8 +10,13 @@ worker_version, status, upstream_status, upstream_ms, path_family, duration_ms, 
 tokens_in, tokens_out, cache_hits, cache_lookups, truncated, count`.
 
 - `path_family` is one of `/repos` · `/catalog` · `/user` · `other` — never the path.
-- `consumer_label` is the logged-in DCS login (self-declared to DCS, not verified here);
-  `consumer_source` says where it came from (`grant` | `none`).
+- `consumer_label` is **optional and defaults to the model** — the MCP client (`clientInfo.name/version`
+  from `initialize`, else the transport's user-agent), never the person (VERDICT T18, captain
+  2026-09-03). The operator decides per deployment with Worker var `TELEMETRY_LABEL`:
+  `model` (default; unset never logs who the user is) · `query` (honor a self-declared
+  `?consumer=<agent>` on the MCP URL) · `grant` (the verified DCS login; login > `?consumer=` > model).
+- `consumer_source` records the rung actually used on every row: `client-info` · `user-agent` ·
+  `query` · `grant` · `none` — the ambiguity is declared, not hidden.
 - `tokens_*` are `bytes/4` estimates, never billing-accurate.
 
 Not tracked: user id/sub, full path, query strings, request or response bodies, tokens, headers.

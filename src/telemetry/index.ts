@@ -23,6 +23,21 @@ export const TELEMETRY_COLUMNS = [
 export type TelemetryColumn = (typeof TELEMETRY_COLUMNS)[number];
 export type TelemetryRow = Record<TelemetryColumn, string | number | null>;
 
+/** v2.7 consumer ladder (VERDICT T18, captain 2026-09-03): the label defaults to the MODEL — the MCP client —
+ *  never the person. `query` and `grant` are operator opt-ins per deployment. `source` records the rung used. */
+export type LabelMode = "model" | "query" | "grant";
+export type ConsumerSource = "client-info" | "user-agent" | "query" | "grant" | "none";
+export function labelMode(v: string | undefined): LabelMode { return v === "query" || v === "grant" ? v : "model"; }
+export function consumerLadder(mode: LabelMode, rungs: { login?: string | null; query?: string | null; clientInfo?: { name?: string; version?: string } | null; userAgent?: string | null }): { label: string; source: ConsumerSource } {
+  const clean = (x: string | null | undefined) => (x ?? "").trim().slice(0, 120);
+  if (mode === "grant" && clean(rungs.login)) return { label: clean(rungs.login), source: "grant" };
+  if ((mode === "grant" || mode === "query") && clean(rungs.query)) return { label: clean(rungs.query), source: "query" };
+  const ci = rungs.clientInfo;
+  if (ci && clean(ci.name)) return { label: `${clean(ci.name)}${clean(ci.version) ? `/${clean(ci.version)}` : ""}`, source: "client-info" };
+  if (clean(rungs.userAgent)) return { label: clean(rungs.userAgent).split(" ")[0], source: "user-agent" };
+  return { label: "unknown", source: "none" };
+}
+
 export type PathFamily = "/repos" | "/catalog" | "/user" | "other";
 /** Two-segment family of a request path; never the path itself. */
 export function pathFamily(path: string | undefined): PathFamily {
