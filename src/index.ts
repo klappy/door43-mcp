@@ -15,7 +15,13 @@ export { Door43MCP };
 
 const provider = new OAuthProvider({
   apiRoute: "/mcp",
-  apiHandler: Door43MCP.serve("/mcp") as any,
+  // v2.7: read `?consumer=` and the transport's user-agent at the door and ride them on props; the ladder
+  // (src/telemetry consumerLadder, VERDICT T18) decides per deployment whether either is ever written.
+  apiHandler: { fetch: (request: Request, env: Env, ctx: ExecutionContext & { props?: Record<string, unknown> }) => {
+    const u = new URL(request.url);
+    ctx.props = { ...(ctx.props ?? {}), consumerQuery: u.searchParams.get("consumer") ?? undefined, userAgent: request.headers.get("user-agent") ?? undefined };
+    return (Door43MCP.serve("/mcp") as any).fetch(request, env, ctx);
+  } } as any,
   defaultHandler: DcsAuthHandler as any,
   authorizeEndpoint: "/authorize",
   tokenEndpoint: "/token",

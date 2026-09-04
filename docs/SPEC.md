@@ -140,7 +140,11 @@ P0005 is the line: anything that needs a job id is not a recipe); a cache of DCS
   recipe names and the `upstream.swagger` pin.
 - Recipes v2: v1's five, plus `map-this-release` (catalog entry → `commit_sha` + `zipball_url`
   → cartographer hand-off), `read-file-at-pin` (`/repos/{owner}/{repo}/contents/{path}?ref={sha}`),
-  `my-spend` (a `telemetry` call: bytes and calls for this `consumer_label` since `{since}`).
+  `my-spend` (a `telemetry` call: bytes and calls for this `consumer_label` since `{since}`;
+  landed v2.7 as `calls:[{tool:"telemetry", sql}]` — `execute` refuses to run it, `docs` fills
+  `{me}` with the session's ladder label). `map-this-release` landed v2.6: one catalog step plus a
+  `handoff` spec; `body.handoff = {server, url, tool, input:{capability, payload:{zip_url}},
+  provenance:{sha, ref, observed_at}}` is formed from the last step's body, never a fetch.
 
 ## `execute` v2 — `{ method?, path?, query?, fields?, headers?, continue?, pin?, recipe?, args?, dry_run?, confirm?, body? }`
 - **One call** (v1 shape) unchanged; `method` and `path` are required for it and optional on the

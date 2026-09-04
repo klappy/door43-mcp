@@ -47,6 +47,7 @@ const numbered = (s: string) => s.split("\n").map((l) => l.replace(/^\d+\.\s+/, 
 /** A recipe's first call, spelled the way a person would type it into the client. */
 export function callText(recipe: string): string {
   const c = RECIPES[recipe].calls[0];
+  if ("tool" in c) return `telemetry ${c.sql.replace(/\s+/g, " ").slice(0, 80)}…`;
   const q = c.query ? "?" + Object.entries(c.query).map(([k, v]) => `${k}=${v}`).join("&") : "";
   const f = c.fields?.length ? ` fields:[${c.fields.map((x) => `"${x}"`).join(",")}]` : "";
   return `execute ${c.method} ${c.path}${q}${f}`;

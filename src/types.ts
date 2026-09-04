@@ -12,6 +12,8 @@ export interface Env {
   OAUTH_KV: KVNamespace;
   /** Telemetry exact channel: D1 `door43mcp_telemetry` (id 52fa8ea4-…, bound in wrangler.jsonc; never created by code). */
   TELEMETRY_DB?: D1Database;
+  /** v2.7 consumer ladder (VERDICT T18): `model` (default) · `query` · `grant`. Unset never logs who the user is. */
+  TELEMETRY_LABEL?: string;
   /** McpAgent Durable Object namespace. */
   MCP_OBJECT: DurableObjectNamespace;
   /** Injected by OAuthProvider on the default handler. */
@@ -28,4 +30,8 @@ export interface GrantProps extends Record<string, unknown> {
   expiresAt?: number;
   /** DCS-reported expires_in (seconds) — observed value for PLAN gate 0. */
   expiresIn?: number;
+  /** v2.7: `?consumer=` on the MCP URL, read at the door (src/index.ts); self-declared, honored only under `TELEMETRY_LABEL=query|grant`. */
+  consumerQuery?: string;
+  /** v2.7: the transport's user-agent, read at the door; the `model` rung's fallback when `clientInfo` is absent. */
+  userAgent?: string;
 }

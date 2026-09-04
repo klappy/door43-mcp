@@ -12,6 +12,14 @@ export interface ExecuteCall {
   continue?: string;
 }
 
+/** v2.7: a pre-formed `telemetry` call (the `my-spend` recipe). */
+export interface TelemetryCall { tool: "telemetry"; sql: string }
+/** v2.6: a pre-formed call on a sibling house server, riding in `body.handoff` until L1 rules its home (T15). */
+export interface Handoff {
+  server: string; url: string; tool: string;
+  input: { capability: string; payload: Record<string, string> };
+  provenance: { sha: string | null; ref: string | null; observed_at: string };
+}
 /** v2.5: a pre-formed recipe call — the `continue` of a stopped run. `continue` is opaque and carries `{recipe, args, from}`. */
 export interface RecipeCall {
   recipe: string;

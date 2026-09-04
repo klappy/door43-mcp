@@ -12,6 +12,7 @@ Re-observed against the repo 2026-09-03 (`wrangler.jsonc`, `docs/validation/2026
    - `wrangler d1 create door43mcp_telemetry` → `d1_databases[0].database_id` (schema: `src/telemetry/schema.sql`)
    - `routes[0].pattern` → your host (custom domain; wrangler creates the DNS record)
    - `vars.D43_HOST` → your DCS host if not `git.door43.org`
+   - `vars.TELEMETRY_LABEL` → leave unset to log only the MCP client (default); `query` honors `?consumer=`; `grant` logs the DCS login (docs/TELEMETRY-POLICY.md)
 4. `wrangler secret put D43_CLIENT_ID` · `D43_CLIENT_SECRET` · `COOKIE_ENCRYPTION_KEY`
    (`openssl rand -hex 32`).
 5. `wrangler deploy` (or push to main — Workers Builds deploys on push). Add

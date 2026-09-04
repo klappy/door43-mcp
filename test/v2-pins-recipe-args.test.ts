@@ -78,7 +78,7 @@ describe("v2.4 — recipe grammar: args and templates (docs)", () => {
     expect(recipeSchema()["read-file-at-pin"].args.sha.pattern).toBe("^[0-9a-f]{40}$");
   });
   it("bound at definition: ≤ 5 steps, GET/HEAD only, no '?' in a path", () => {
-    for (const [n, r] of Object.entries(RECIPES)) { expect(r.calls.length, n).toBeLessThanOrEqual(MAX_STEPS); for (const c of r.calls) { expect(["GET", "HEAD"]).toContain(c.method); expect(c.path).not.toMatch(/[?#]/); } }
+    for (const [n, r] of Object.entries(RECIPES)) { expect(r.calls.length, n).toBeLessThanOrEqual(MAX_STEPS); for (const c of r.calls) { if ("tool" in c) continue; expect(["GET", "HEAD"]).toContain(c.method); expect(c.path).not.toMatch(/[?#]/); } }
   });
 });
 
@@ -160,7 +160,7 @@ describe("v2.3 — pins: the sha you already hold, never one we fetch", () => {
     const src = readFileSync(new URL(import.meta.url), "utf8");
     expect(src).not.toMatch(/git\/refs/);
     expect(readFileSync(new URL("../src/recipes.ts", import.meta.url), "utf8")).not.toMatch(/fetch\(/);
-    for (const r of Object.values(RECIPES)) for (const c of r.calls) expect(c.path).not.toMatch(/git\/refs/);
+    for (const r of Object.values(RECIPES)) for (const c of r.calls) if (!("tool" in c)) expect(c.path).not.toMatch(/git\/refs/);
     // applyPin and estimatePlan are pure: neither takes a fetch.
     expect(applyPin.length).toBe(3); expect(estimatePlan.length).toBeLessThanOrEqual(2);
   });

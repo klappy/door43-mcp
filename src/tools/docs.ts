@@ -26,6 +26,8 @@ export interface DocsDeps {
   swagger: () => Promise<SwaggerDoc | null>;
   login: string | null;
   loginUrl: string;
+  /** v2.7: this session's consumer label (the ladder's answer) — fills `my-spend`'s `{me}` default. */
+  consumerLabel?: string;
   serverUrl: string;
 }
 
@@ -163,7 +165,7 @@ export async function runDocs(d: DocsDeps, input: DocsInput = {}): Promise<Envel
 
   if (input.recipe !== undefined) {
     // v2.4: the filled plan. Zero fetches — the table and the args are all it takes (SPEC §docs v2).
-    const f = fill(input.recipe, input.args);
+    const f = fill(input.recipe, input.args, undefined, d.consumerLabel ?? "unknown");
     if (!f.ok) {
       if (f.status === 404) return envelope({ upstream, request: req, status: 404, body: { recipes: f.recipes }, hints: [`no recipe '${input.recipe}'; pick one of the listed, or docs({rung:"recipes"}) for their args`] });
       return envelope({ upstream, request: req, status: 400, body: { error: f.error, arg: f.arg, about: f.about, args: recipeSchema()[input.recipe]?.args ?? {} }, hints: [`add args:{${f.arg}:…} and replay; nothing was sent upstream`] });
