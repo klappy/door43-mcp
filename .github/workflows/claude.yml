@@ -1,0 +1,44 @@
+# Cook loop — Trigger A of rail/meals/2026-09-03-door43-mcp-v2/MEAL.md (klappy/kitchen).
+# `@claude` on an issue or PR in this repo fires one cook. The brief is constant
+# (SHIM-DISPATCH); the cook finds its assignment in the issue it was called from.
+# Secrets (HUMAN-ONLY, captain): ANTHROPIC_API_KEY · KITCHEN_READ_TOKEN
+# (fine-grained PAT, contents:read on klappy/kitchen, so the cook can fetch the ticket).
+name: cook
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened, assigned]
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+jobs:
+  cook:
+    if: contains(github.event.comment.body || github.event.issue.body, '@claude')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: "--max-turns 120"
+          prompt: |
+            You are Auggie's crew, dispatched to cook ONE ticket for klappy/door43-mcp.
+            The issue you were called from names the ticket id. Fetch the brief and the
+            ticket live — never from memory:
+              brief:  https://api.github.com/repos/klappy/kitchen/contents/cookbook/boarding/SHIM-DISPATCH.md
+              ticket: https://api.github.com/repos/klappy/kitchen/contents/rail/1-ordered/<ticket-id>/TICKET.md
+              (also CHECKLIST.md beside TEMPLATE.md in cookbook/tickets/, and any VERDICT.md beside the ticket)
+            using: curl -s -H "Authorization: Bearer $KITCHEN_READ_TOKEN" -H "Accept: application/vnd.github.raw" <url>
+            Cook on branch dish/<ticket-id> in this repo. Open ONE draft PR assigned to klappy.
+            Do not merge. Do not move the kitchen rail (CoS does). Put the observed
+            done-means lines and the wall-clock line in the PR body. If the ticket fails
+            CHECKLIST, stop and say which gate, in the issue.
+        env:
+          KITCHEN_READ_TOKEN: ${{ secrets.KITCHEN_READ_TOKEN }}
