@@ -41,11 +41,11 @@ export class Door43MCP extends McpAgent<Env, Record<string, never>, GrantProps> 
   }
 
   /** One row per call, off the response path. Only allowlisted columns leave here (src/telemetry toRow). */
-  private emit(tool: "docs" | "execute" | "telemetry", input: unknown, out: Envelope, t0: number) {
+  private emit(tool: "docs" | "execute" | "telemetry", input: unknown, out: Envelope, t0: number, event_type: "tool_call" | "recipe_run" = "tool_call") {
     const db = this.env.TELEMETRY_DB as TelemetryDb | undefined;
     if (!db) return;
     const p = this.ctx.waitUntil(writeRow(db, {
-      tool_name: tool, method: out.request.method, path: tool === "execute" ? out.request.path : undefined,
+      event_type, tool_name: tool, method: out.request.method, path: tool === "execute" ? out.request.path : undefined,
       status: out.status, upstream_status: tool === "execute" ? out.status : null, upstream_ms: out.cost.upstream_ms,
       duration_ms: Date.now() - t0, bytes_in: byteLength(input), bytes_out: out.cost.bytes, truncated: out.truncated,
       consumer_label: this.props?.login ?? "unknown", consumer_source: this.props?.login ? "grant" : "none", worker_version: VERSION,
@@ -98,9 +98,9 @@ export class Door43MCP extends McpAgent<Env, Record<string, never>, GrantProps> 
           query: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
           fields: z.array(z.string()).optional().describe("JSON paths to keep, e.g. [\"data[].name\",\"data[].owner\"] — selection only"),
           headers: z.record(z.string(), z.string()).optional().describe("Forwarded only: accept, accept-language, if-none-match, if-modified-since, range"),
-          continue: z.string().optional().describe("Opaque token from a truncated answer's `continue`"),
+          continue: z.string().optional().describe("Opaque token from a truncated answer's `continue` (a body slice, or a stopped recipe run)"),
           pin: z.object({ sha: z.string() }).optional().describe("Pin this read to a 40-hex sha you already hold: ref (query) or {ref} (archive) is rewritten to it; no fetch is spent"),
-          recipe: z.string().optional().describe("With `args` and `dry_run:true`: the filled plan + estimate{bytes,calls,basis}, zero upstream fetches"),
+          recipe: z.string().optional().describe("With `args`: run the filled plan (≤ 5 steps) — body.steps[] one envelope each, cost summed, `continue` on a failed step; with `dry_run:true`: the plan + estimate, zero fetches"),
           args: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional().describe("Recipe args"),
           dry_run: z.boolean().optional().describe("Price the recipe without spending"),
         },
@@ -113,6 +113,8 @@ export class Door43MCP extends McpAgent<Env, Record<string, never>, GrantProps> 
             host, version: await upstreamVersion(host), fetch: (u, i) => fetch(u, i), grant,
             consumer: this.props?.login ?? "unknown", loginUrl: `${SERVER_URL}/authorize`, swagger: () => swaggerPaths(host),
             p50BytesByFamily: env.TELEMETRY_DB ? () => p50BytesByFamily(env.TELEMETRY_DB as TelemetryDb) : undefined,
+            // v2.5: one `tool_call` row per step, off the response path; the run row lands below.
+            onStep: (call, stepOut, ts) => this.emit("execute", call, stepOut, ts),
             refresh: async (g) => {
               if (!g.refreshToken) return null;
               const t = await refreshDcs(host, env.D43_CLIENT_ID, env.D43_CLIENT_SECRET, g.refreshToken);
@@ -124,7 +126,7 @@ export class Door43MCP extends McpAgent<Env, Record<string, never>, GrantProps> 
           },
           input,
         );
-        this.emit("execute", input, out, t0);
+        this.emit("execute", input, out, t0, input.recipe !== undefined && !input.dry_run ? "recipe_run" : "tool_call");
         return this.reply(out);
       },
     );

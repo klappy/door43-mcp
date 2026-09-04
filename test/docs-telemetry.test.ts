@@ -88,7 +88,7 @@ describe("docs L1/L2/L3/query (SPEC §docs)", () => {
 
 describe("docs recipes", () => {
   it("ships v1's five recipes (+ read-file-at-pin, SPEC §docs v2); latest-release-zip selects zipball_url", async () => {
-    expect(Object.keys(RECIPES)).toEqual(["whoami", "catalog-by-language", "latest-release-zip", "repo-tree-at-ref", "page-through", "read-file-at-pin"]);
+    expect(Object.keys(RECIPES)).toEqual(["whoami", "catalog-by-language", "latest-release-zip", "repo-tree-at-ref", "page-through", "repo-at-a-glance", "read-file-at-pin"]);
     // v2.4: owner/repo are args, no longer hard-coded (DELTA seed 4) — see test/v2-pins-recipe-args.test.ts for the 400.
     const e = await runDocs(deps(), { recipe: "latest-release-zip", args: { owner: "unfoldingWord", repo: "en_ult" } });
     expect(e.status).toBe(200);

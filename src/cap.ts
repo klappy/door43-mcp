@@ -9,8 +9,16 @@ const b64u = (u: Uint8Array) => btoa(String.fromCharCode(...u)).replace(/\+/g, "
 const unb64u = (s: string) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
 
 export interface ContinueToken { offset: number }
+/** v2.5 run token: resume a recipe at step `from` (1-based). Opaque to the client; nothing is held server-side (T13). */
+export interface RunToken { recipe: string; args: Record<string, string | number | boolean>; from: number }
 
 export function mintContinue(t: ContinueToken): string { return b64u(enc.encode(JSON.stringify(t))); }
+export function mintRunContinue(t: RunToken): string { return b64u(enc.encode(JSON.stringify({ run: t }))); }
+export function readRunContinue(token: string | undefined): RunToken | null {
+  if (!token) return null;
+  try { const t = JSON.parse(dec.decode(unb64u(token)))?.run; return t && typeof t.recipe === "string" && Number.isInteger(t.from) && t.from >= 1 && t.args && typeof t.args === "object" ? { recipe: t.recipe, args: t.args, from: t.from } : null; }
+  catch { return null; }
+}
 export function readContinue(token: string | undefined): ContinueToken | null {
   if (!token) return null;
   try { const t = JSON.parse(dec.decode(unb64u(token))); return typeof t?.offset === "number" && t.offset >= 0 ? { offset: t.offset } : null; }

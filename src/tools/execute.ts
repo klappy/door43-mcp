@@ -4,16 +4,20 @@
  * `fields` projection; 200 KB cap with `continue`; refresh-on-401 once; teaching errors.
  * v2.3 `pin:{sha}` rewrites the ref to the sha the caller already holds (never minted here).
  * v2.4 `{recipe, args, dry_run:true}` prices the filled plan from telemetry — zero upstream fetches.
+ * v2.5 `{recipe, args}` runs the filled plan: ≤ 5 straight-line steps, one envelope per step in `body.steps[]`,
+ *      one summed `cost`; a step ≥ 400 or the 200 KB total cap stops the run — `truncated:true`, `continue` =
+ *      a pre-formed `{recipe, args, continue}` whose token carries `{recipe, args, from}`. Nothing is held
+ *      server-side between calls (T13); `deps.onStep` is how the caller writes one telemetry row per step.
  * SPEC §execute · convention §2 §3 §7 §9 · TENSIONS T2 T6 · DELTA seeds 2, 4.
  *
  * The core is `runExecute(deps, input)` so tests drive it with an injected fetch and
  * assert what reached the upstream (write-leak and 405 tests assert *no* fetch).
  */
-import { envelope, byteLength, type Envelope, type ExecuteCall, type Upstream } from "../envelope";
+import { envelope, byteLength, type Envelope, type ExecuteCall, type RecipeCall, type Upstream } from "../envelope";
 import { project } from "../projection";
-import { capBody, readContinue } from "../cap";
+import { capBody, readContinue, mintRunContinue, readRunContinue, BODY_CAP_BYTES } from "../cap";
 import { linkNext, nearestPaths } from "../upstream";
-import { fill, SHA40, type Plan } from "../recipes";
+import { fill, SHA40, RECIPES, type Plan, type Recipe } from "../recipes";
 import { pathFamily, type PathFamily } from "../telemetry";
 
 import { VERSION } from "../version";
@@ -50,6 +54,10 @@ export interface ExecuteDeps {
   swagger: () => Promise<string[]>;
   consumer?: string;
   loginUrl?: string;
+  /** v2.5: called once per step as it lands, with the step's pre-formed call and its envelope. Telemetry rides here. */
+  onStep?: (call: ExecuteCall, out: Envelope, t0: number) => void;
+  /** Test hook: an alternate recipe table (a 3-step recipe under test). Production uses `RECIPES`. */
+  recipes?: Record<string, Recipe>;
   /** v2.4 estimate basis: p50 `bytes_out` per path family from this deployment's telemetry (30 d). Absent → "no history". */
   p50BytesByFamily?: () => Promise<Partial<Record<PathFamily, number>>>;
 }
@@ -152,9 +160,9 @@ export async function runExecute(deps: ExecuteDeps, input: ExecuteInput): Promis
   if (input.recipe !== undefined || input.dry_run) {
     const req0 = requestEcho({ ...input, method: input.method ?? "-", path: input.path ?? "" });
     if (input.recipe === undefined) return envelope({ upstream, request: req0, status: 400, body: { error: "dry_run needs a recipe" }, hints: ["execute({recipe, args, dry_run:true}); docs({rung:\"recipes\"}) lists them; nothing was sent upstream"] });
-    const f = fill(input.recipe, input.args);
+    const f = fill(input.recipe, input.args, deps.recipes ?? RECIPES);
     if (!f.ok) return envelope({ upstream, request: req0, status: f.status, body: f.status === 404 ? { recipes: f.recipes } : { error: f.error, arg: f.arg, about: f.about }, hints: [f.status === 404 ? "no such recipe; pick one of the listed" : `add args:{${f.arg}:…} and replay; nothing was sent upstream`] });
-    if (!input.dry_run) return envelope({ upstream, request: req0, status: 501, body: { plan: f.plan }, hints: ["recipe run lands in v2.5; until then paste plan.calls into execute in order, or add dry_run:true to price it; nothing was sent upstream"] });
+    if (!input.dry_run) return runRecipe(deps, input, f.plan, upstream, req0);
     const est = await estimatePlan(f.plan, deps.p50BytesByFamily);
     const body = { plan: f.plan, estimate: est.estimate, ...(est.estimate ? {} : { basis: est.basis }) };
     return envelope({ upstream, request: req0, status: 200, body, hints: [est.estimate ? `estimate is a named basis (${est.basis}), never a promise; 0 upstream fetches` : `${est.basis}; run the plan once and the next dry run has a basis; 0 upstream fetches`] });
@@ -270,6 +278,47 @@ export async function runExecute(deps: ExecuteDeps, input: ExecuteInput): Promis
   }
   return envelope({ upstream, request: req, status: r.status, body: outBody, truncated: cap.truncated, next, continue: cap.continue, hints,
     cost: { bytes: byteLength(outBody), tokens_est: 0, upstream_ms: ms } });
+}
+
+/** v2.5 — run a filled plan in order as the user. Reuses `runExecute` per step; never forks it. */
+async function runRecipe(deps: ExecuteDeps, input: ExecuteInput, plan: Plan, upstream: Upstream, req: Envelope["request"]): Promise<Envelope> {
+  const hints: string[] = [];
+  let from = 1;
+  if (input.continue) {
+    const t = readRunContinue(input.continue);
+    if (!t || t.recipe !== plan.recipe) hints.push("continue token unreadable or for another recipe; the run starts at step 1");
+    else if (t.from > plan.calls.length) return envelope({ upstream, request: req, status: 400, body: { error: `continue resumes at step ${t.from}; this recipe has ${plan.calls.length}` }, hints: ["nothing was sent upstream"] });
+    else from = t.from;
+  }
+  const steps: Envelope[] = [];
+  let bytes = 0, ms = 0, stopped: { at: number; why: string } | null = null;
+  const stepDeps: ExecuteDeps = { ...deps, onStep: undefined, recipes: undefined };
+  for (let k = from; k <= plan.calls.length; k++) {
+    const call = plan.calls[k - 1];
+    const t0 = Date.now();
+    const out = await runExecute(stepDeps, { method: call.method, path: call.path, query: call.query, fields: call.fields });
+    deps.onStep?.(call, out, t0);
+    steps.push(out);
+    bytes += out.cost.bytes; ms += out.cost.upstream_ms;
+    if (out.status >= 400) { stopped = { at: k, why: `step ${k} answered ${out.status}` }; break; }
+    if (out.truncated) { stopped = { at: k, why: `step ${k} body hit its own cap; replay steps[${k - 1}].continue for the rest of that step` }; break; }
+    if (bytes > BODY_CAP_BYTES && k < plan.calls.length) { stopped = { at: k, why: `${bytes} bytes after step ${k} exceeds the ${BODY_CAP_BYTES} B run cap` }; break; }
+  }
+  const last = steps[steps.length - 1];
+  const done = steps.length && !stopped && from + steps.length - 1 === plan.calls.length;
+  let cont: RecipeCall | null = null;
+  if (stopped) {
+    // A failed step is retried from itself; a step that landed but overran is resumed after itself.
+    const resumeAt = last.status >= 400 ? stopped.at : stopped.at + 1;
+    if (resumeAt <= plan.calls.length) cont = { recipe: plan.recipe, args: plan.args, continue: mintRunContinue({ recipe: plan.recipe, args: plan.args, from: resumeAt }) };
+    hints.push(`${stopped.why}; ${cont ? `\`continue\` resumes at step ${resumeAt} of ${plan.calls.length}` : "no steps remain"}`);
+  } else {
+    hints.push(`${steps.length} step${steps.length === 1 ? "" : "s"} ran (${from}–${plan.calls.length} of ${plan.calls.length}); cost is the sum of the steps`);
+  }
+  if (from > 1) hints.push(`resumed at step ${from}; steps[] holds ${from}–${from + steps.length - 1} only`);
+  const body = { recipe: plan.recipe, args: plan.args, from, steps, ...(cont ? { stopped_at: stopped!.at } : {}) };
+  return envelope({ upstream, request: req, status: last.status, body, truncated: !done, next: null, continue: cont, hints,
+    cost: { bytes, tokens_est: 0, upstream_ms: ms } });
 }
 
 async function safeBody(r: Response): Promise<unknown> {
