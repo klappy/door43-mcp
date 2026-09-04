@@ -1,6 +1,6 @@
 {
   "name": "door43-mcp",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "description": "Cloudflare Worker MCP server fronting a DCS/Gitea host as the logged-in user. Three tools: `docs` (ladder + recipes), `execute` (GET/HEAD, envelope, fields, refresh-on-401), `telemetry` (SELECT-only, D1 exact channel).",
   "type": "module",

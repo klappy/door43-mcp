@@ -12,6 +12,13 @@ export interface ExecuteCall {
   continue?: string;
 }
 
+/** v2.5: a pre-formed recipe call — the `continue` of a stopped run. `continue` is opaque and carries `{recipe, args, from}`. */
+export interface RecipeCall {
+  recipe: string;
+  args?: Record<string, string | number | boolean>;
+  continue: string;
+}
+
 /** SPEC §v2 "Envelope additions": keys unchanged; the `upstream` object grows. All additions optional/null. */
 export interface Upstream {
   host: string;
@@ -32,7 +39,7 @@ export interface Envelope {
   body: unknown;
   truncated: boolean;
   next: ExecuteCall | null;
-  continue: ExecuteCall | null;
+  continue: ExecuteCall | RecipeCall | null;
   hints: string[];
   cost: { bytes: number; tokens_est: number; upstream_ms: number };
 }

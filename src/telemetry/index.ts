@@ -46,6 +46,8 @@ export async function ensureSchema(db: TelemetryDb): Promise<void> {
 }
 
 export interface Emit {
+  /** `tool_call` (default) or, v2.5, `recipe_run` — one per run beside its per-step `tool_call` rows. */
+  event_type?: "tool_call" | "recipe_run";
   tool_name: string;
   method?: string;
   path?: string;
@@ -66,7 +68,7 @@ export interface Emit {
 /** Build the row from the allowlist only — a stray key on `e` never reaches the table. */
 export function toRow(e: Emit, now = new Date()): TelemetryRow {
   return {
-    timestamp: now.toISOString(), event_type: "tool_call", method: e.method ?? "-", tool_name: e.tool_name,
+    timestamp: now.toISOString(), event_type: e.event_type ?? "tool_call", method: e.method ?? "-", tool_name: e.tool_name,
     consumer_label: e.consumer_label, consumer_source: e.consumer_source, worker_version: e.worker_version,
     status: e.status, upstream_status: e.upstream_status ?? null, upstream_ms: e.upstream_ms ?? 0,
     path_family: pathFamily(e.path), duration_ms: e.duration_ms, bytes_in: e.bytes_in, bytes_out: e.bytes_out,

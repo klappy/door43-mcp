@@ -42,6 +42,7 @@ Each is a `docs({recipe, args})` the server fills for you (`*` = required arg, `
 | `latest-release-zip` | The latest release of a repo and its zipball. | `owner* repo*` | `execute GET /repos/{owner}/{repo}/releases/latest fields:["tag_name","name","published_at","zipball_url"]` |
 | `repo-tree-at-ref` | The file tree of a repo at a ref (use `recursive:true` for the whole tree). | `owner* repo* ref=master` | `execute GET /repos/{owner}/{repo}/git/trees/{ref}?recursive=true&per_page=1000 fields:["sha","truncated","tree[].path","tree[].type","tree[].sha"]` |
 | `page-through` | Walk a paged list: call once, then replay `next` from each envelope until it is null; `hints` carries `x-total-count`. | `limit=50` | `execute GET /catalog/search?limit={limit}&page=1 fields:["data[].full_name"]` |
+| `repo-at-a-glance` | Three reads on one repo: its record, its latest release, its tree at a ref (v2.5 run: three envelopes, one tally). | `owner* repo* ref=master` | `execute GET /repos/{owner}/{repo} fields:["full_name","description","default_branch","updated_at","size"]` |
 | `read-file-at-pin` | One file's content at a pinned sha (the ref the upstream already gave you; never minted here). | `owner* repo* path* sha*` | `execute GET /repos/{owner}/{repo}/contents/{path}?ref={sha} fields:["name","sha","size","encoding","content"]` |
 
 ## Deploy your own

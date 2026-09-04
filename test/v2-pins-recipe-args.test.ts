@@ -104,12 +104,11 @@ describe("v2.4 — dry_run prices the plan with a named basis (execute)", () => 
     const part = await estimatePlan(fill("whoami").ok ? (fill("whoami") as any).plan : null, async () => ({ "/repos": 5 }));
     expect(part.estimate).toBeNull(); expect(part.basis).toBe("no history for /user");
   });
-  it("missing arg → 400 naming it; unknown recipe → 404; recipe without dry_run → 501 (v2.5); all with zero fetches", async () => {
+  it("missing arg → 400 naming it; unknown recipe → 404; malformed run inputs → 400; all with zero fetches (the run itself is v2.5, test/v2-recipe-run.test.ts)", async () => {
     const { d, hits } = xdeps(() => json({}));
     expect((await runExecute(d, { recipe: "latest-release-zip", args: { repo: "x" }, dry_run: true })).body).toMatchObject({ arg: "owner" });
     expect((await runExecute(d, { recipe: "nope", dry_run: true })).status).toBe(404);
-    const run = await runExecute(d, { recipe: "whoami" });
-    expect(run.status).toBe(501); expect((run.body as any).plan.calls[0].path).toBe("/user");
+    expect((await runExecute(d, { recipe: "latest-release-zip", args: { repo: "x" } })).status).toBe(400);
     expect((await runExecute(d, { dry_run: true })).status).toBe(400);
     expect((await runExecute(d, { path: "/user" } as any)).status).toBe(400);
     expect(hits.length).toBe(0);

@@ -159,8 +159,19 @@ P0005 is the line: anything that needs a job id is not a recipe); a cache of DCS
   where `basis` names the source (`"telemetry p50 bytes_out by path_family, last 30d, this host"`;
   p50 over `execute` rows with `status < 400`, newest 5,000, median per family) or
   `estimate:null` with `body.basis:"no history"` (`"no history for <family>"` when some families
-  have rows). **Zero upstream fetches**, and no grant is needed (test asserts). Until v2.5
-  lands, `{recipe, args}` without `dry_run` answers `501` with the plan (v2.4 recut).
+  have rows). **Zero upstream fetches**, and no grant is needed (test asserts). `{recipe, args}`
+  without `dry_run` runs the plan (v2.5, landed 2026-09-04).
+- **Recipe run, as landed (v2.5):** `body = {recipe, args, from, steps[], stopped_at?}`; `status`
+  is the last step's; `cost` is the sum; `steps[]` are full per-step envelopes (projection applied
+  per step). Stop rules, in order after each step: step `status ≥ 400` → stop, `continue` resumes
+  **at that step**; the step's own body cap tripped (`truncated`) → stop, `continue` resumes after
+  it (the step's own `continue` fetches its remainder); total bytes over 200 KB with steps left →
+  stop, resume after. `continue` is `{recipe, args, continue:<token>}` — the token is opaque and
+  carries `{recipe, args, from}`; the server keeps nothing (T13). A stale, foreign, or unreadable
+  token starts at step 1 with a hint; `from` past the last step → 400, no fetch. One `tool_call`
+  telemetry row per step (family of the step) and one `recipe_run` row (family `other`) per call.
+  Bounds are thrown at table definition (`defineRecipes`): > 5 steps, a write verb, or `?`/`#` in
+  a path fails the suite.
 - **Teaching on 200** (rule: never an extra upstream call): `fields` naming a key the swagger's
   response schema lacks → hint; `ref` that is a branch name → hint "moving ref; pin with
   `pin:{sha}`"; `x-total-count` and `ratelimit` surfaced; etag surfaced.

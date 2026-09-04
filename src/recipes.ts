@@ -42,15 +42,31 @@ export const RECIPES: Record<string, Recipe> = {
   "page-through": { about: "Walk a paged list: call once, then replay `next` from each envelope until it is null; `hints` carries `x-total-count`.",
     args: { limit: { about: "page size", default: "50" } },
     calls: [{ method: "GET", path: "/catalog/search", query: { limit: "{limit}", page: 1 }, fields: ["data[].full_name"] }] },
+  "repo-at-a-glance": { about: "Three reads on one repo: its record, its latest release, its tree at a ref (v2.5 run: three envelopes, one tally).",
+    args: { owner: OWNER, repo: REPO, ref: { about: "branch, tag, or sha for the tree step; a sha is the only pin", default: "master" } },
+    calls: [
+      { method: "GET", path: "/repos/{owner}/{repo}", fields: ["full_name", "description", "default_branch", "updated_at", "size"] },
+      { method: "GET", path: "/repos/{owner}/{repo}/releases/latest", fields: ["tag_name", "name", "published_at", "zipball_url"] },
+      { method: "GET", path: "/repos/{owner}/{repo}/git/trees/{ref}", query: { recursive: true, per_page: 1000 }, fields: ["sha", "truncated", "tree[].path", "tree[].type"] },
+    ] },
   "read-file-at-pin": { about: "One file's content at a pinned sha (the ref the upstream already gave you; never minted here).",
     args: { owner: OWNER, repo: REPO, path: { about: "file path inside the repo, e.g. README.md", required: true }, sha: { about: "40-hex commit sha (from /catalog/* commit_sha or a git/refs answer)", required: true, pattern: SHA40 } },
     calls: [{ method: "GET", path: "/repos/{owner}/{repo}/contents/{path}", query: { ref: "{sha}" }, fields: ["name", "sha", "size", "encoding", "content"] }] },
 };
 
-// Bound at definition: a recipe with 6 steps, a write verb, or a raw '?' fails the suite (test pins these).
-for (const [n, r] of Object.entries(RECIPES)) {
-  if (r.calls.length > MAX_STEPS) throw new Error(`recipe '${n}' has ${r.calls.length} steps; the bound is ${MAX_STEPS}`);
+/** Bound at definition (v2.5): a table with a 6-step recipe, a write verb, or a raw '?' throws here — the suite fails, nothing ships. */
+export function defineRecipes<T extends Record<string, Recipe>>(table: T): T {
+  for (const [n, r] of Object.entries(table)) {
+    if (r.calls.length > MAX_STEPS) throw new Error(`recipe '${n}' has ${r.calls.length} steps; the bound is ${MAX_STEPS}`);
+    if (r.calls.length < 1) throw new Error(`recipe '${n}' has no steps`);
+    for (const c of r.calls) {
+      if (c.method !== "GET" && c.method !== "HEAD") throw new Error(`recipe '${n}' carries a write verb ${c.method}; recipes read`);
+      if (/[?#]/.test(c.path)) throw new Error(`recipe '${n}' path carries '?' or '#'; parameters go in query`);
+    }
+  }
+  return table;
 }
+defineRecipes(RECIPES);
 
 const TEMPLATE = /\{([a-zA-Z_]+)\}/g;
 
@@ -58,9 +74,9 @@ export type FillResult = { ok: true; plan: Plan } | { ok: false; status: 400 | 4
 
 /** Resolve a recipe's templates from `args` (+ defaults). Pure; zero fetches. The first missing or
  *  malformed arg is named with its `about` — the agent fixes one thing and replays. */
-export function fill(name: string, args: Record<string, string | number | boolean> = {}): FillResult {
-  const r = RECIPES[name];
-  if (!r) return { ok: false, status: 404, error: `no recipe '${name}'`, recipes: Object.keys(RECIPES) };
+export function fill(name: string, args: Record<string, string | number | boolean> = {}, table: Record<string, Recipe> = RECIPES): FillResult {
+  const r = table[name];
+  if (!r) return { ok: false, status: 404, error: `no recipe '${name}'`, recipes: Object.keys(table) };
   const resolved: Record<string, string> = {};
   for (const [k, a] of Object.entries(r.args)) {
     // "" is absent (Bugbot #14, low): an empty optional arg takes its default; an empty required one is missing.
