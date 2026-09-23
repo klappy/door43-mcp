@@ -1,0 +1,25 @@
+{
+  "source_commit": "d621c6f32e539522deeae2eab8bab404e8ad5019",
+  "source_files": [
+    {
+      "path": "rail/4-plated/2026-09-03-door43-mcp-v2-1-l2-truth-teach/CHECKLIST-RUN.md",
+      "sha": "a422f31029a1784a35a3df2e254c2ad6f401dda0",
+      "mode": "100644"
+    },
+    {
+      "path": "rail/4-plated/2026-09-03-door43-mcp-v2-1-l2-truth-teach/DEBRIEF.md",
+      "sha": "1185811fd3cc3f477cecf07c2aeb2a31d86f0b6f",
+      "mode": "100644"
+    },
+    {
+      "path": "rail/4-plated/2026-09-03-door43-mcp-v2-1-l2-truth-teach/LEARNING-CLAIM.md",
+      "sha": "6c6f4659f73247bf47cbc9e881e15828e0cd53d1",
+      "mode": "100644"
+    },
+    {
+      "path": "rail/4-plated/2026-09-03-door43-mcp-v2-1-l2-truth-teach/TICKET.md",
+      "sha": "34cfd89819f9482d6032594a1a94224a0956706a",
+      "mode": "100644"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "source_commit": "d621c6f32e539522deeae2eab8bab404e8ad5019",
+  "source_files": [
+    {
+      "path": "rail/4-plated/2026-09-03-door43-mcp-v1-validation-gate4/CHECKLIST-RUN.md",
+      "sha": "fdc474fa3047a5bb2ada55c5e535bb4be386ec62",
+      "mode": "100644"
+    },
+    {
+      "path": "rail/4-plated/2026-09-03-door43-mcp-v1-validation-gate4/DEBRIEF.md",
+      "sha": "60adb16b66ae8b389c6171d29ab6075218e81460",
+      "mode": "100644"
+    },
+    {
+      "path": "rail/4-plated/2026-09-03-door43-mcp-v1-validation-gate4/LEARNING-CLAIM.md",
+      "sha": "6c6f4659f73247bf47cbc9e881e15828e0cd53d1",
+      "mode": "100644"
+    },
+    {
+      "path": "rail/4-plated/2026-09-03-door43-mcp-v1-validation-gate4/TICKET.md",
+      "sha": "76a40a2519c277c4078194a28e1ee000a63e17c4",
+      "mode": "100644"
+    }
+  ]
+}

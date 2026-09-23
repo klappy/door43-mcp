@@ -1,0 +1,20 @@
+{
+  "source_commit": "d621c6f32e539522deeae2eab8bab404e8ad5019",
+  "source_files": [
+    {
+      "path": "rail/4-plated/2026-09-03-door43-mcp-version-single-source/DEBRIEF.md",
+      "sha": "7cd7959a9a9a0dc307d2b0e94829b9ded519a4e2",
+      "mode": "100644"
+    },
+    {
+      "path": "rail/4-plated/2026-09-03-door43-mcp-version-single-source/LEARNING-CLAIM.md",
+      "sha": "6c6f4659f73247bf47cbc9e881e15828e0cd53d1",
+      "mode": "100644"
+    },
+    {
+      "path": "rail/4-plated/2026-09-03-door43-mcp-version-single-source/TICKET.md",
+      "sha": "ed12758d02878b9d2c02b0ec3aae782ab2ce9f4f",
+      "mode": "100644"
+    }
+  ]
+}
