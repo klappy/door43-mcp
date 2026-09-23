@@ -1,0 +1,25 @@
+{
+  "source_commit": "d621c6f32e539522deeae2eab8bab404e8ad5019",
+  "source_files": [
+    {
+      "path": "rail/4-plated/2026-09-02-door43-mcp-callback-redirect/CHECKLIST-RUN.md",
+      "sha": "8751a428d6a702c1bf5f5f5590ef6172a084ba5a",
+      "mode": "100644"
+    },
+    {
+      "path": "rail/4-plated/2026-09-02-door43-mcp-callback-redirect/DEBRIEF.md",
+      "sha": "c37d0721e14ba35e8c77df49ef45f99b0d300132",
+      "mode": "100644"
+    },
+    {
+      "path": "rail/4-plated/2026-09-02-door43-mcp-callback-redirect/LEARNING-CLAIM.md",
+      "sha": "6c6f4659f73247bf47cbc9e881e15828e0cd53d1",
+      "mode": "100644"
+    },
+    {
+      "path": "rail/4-plated/2026-09-02-door43-mcp-callback-redirect/TICKET.md",
+      "sha": "30c583d27e5cd5df2352bd14b872dfe9ebcdc9df",
+      "mode": "100644"
+    }
+  ]
+}

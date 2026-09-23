@@ -1,0 +1,25 @@
+{
+  "source_commit": "d621c6f32e539522deeae2eab8bab404e8ad5019",
+  "source_files": [
+    {
+      "path": "rail/4-plated/2026-09-03-door43-mcp-v2-2-pins-recipe-args/CHECKLIST-RUN.md",
+      "sha": "5ff47028d18c46685425e6f669d2a7493bf199b6",
+      "mode": "100644"
+    },
+    {
+      "path": "rail/4-plated/2026-09-03-door43-mcp-v2-2-pins-recipe-args/DEBRIEF.md",
+      "sha": "37e071ad1b8cf81fda1f9c4cf1c1222c6f20a3eb",
+      "mode": "100644"
+    },
+    {
+      "path": "rail/4-plated/2026-09-03-door43-mcp-v2-2-pins-recipe-args/LEARNING-CLAIM.md",
+      "sha": "6c6f4659f73247bf47cbc9e881e15828e0cd53d1",
+      "mode": "100644"
+    },
+    {
+      "path": "rail/4-plated/2026-09-03-door43-mcp-v2-2-pins-recipe-args/TICKET.md",
+      "sha": "a000db883abd3b87c51d2e6aeef6910fb4de1026",
+      "mode": "100644"
+    }
+  ]
+}

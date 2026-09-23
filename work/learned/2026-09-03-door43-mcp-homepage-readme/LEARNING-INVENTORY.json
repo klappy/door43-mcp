@@ -1,0 +1,25 @@
+{
+  "source_commit": "d621c6f32e539522deeae2eab8bab404e8ad5019",
+  "source_files": [
+    {
+      "path": "rail/4-plated/2026-09-03-door43-mcp-homepage-readme/CHECKLIST-RUN.md",
+      "sha": "d7a1c3ca05758aa649738b3cdb91b9ff24911145",
+      "mode": "100644"
+    },
+    {
+      "path": "rail/4-plated/2026-09-03-door43-mcp-homepage-readme/DEBRIEF.md",
+      "sha": "4e0ec6a35a4e9dd945444db2458896ce106a0f2d",
+      "mode": "100644"
+    },
+    {
+      "path": "rail/4-plated/2026-09-03-door43-mcp-homepage-readme/LEARNING-CLAIM.md",
+      "sha": "6c6f4659f73247bf47cbc9e881e15828e0cd53d1",
+      "mode": "100644"
+    },
+    {
+      "path": "rail/4-plated/2026-09-03-door43-mcp-homepage-readme/TICKET.md",
+      "sha": "f35a4d19d7e0e0d608c69b3c37e630379576886f",
+      "mode": "100644"
+    }
+  ]
+}

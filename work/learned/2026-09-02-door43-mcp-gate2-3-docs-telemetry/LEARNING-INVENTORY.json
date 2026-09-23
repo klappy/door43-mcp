@@ -1,0 +1,25 @@
+{
+  "source_commit": "d621c6f32e539522deeae2eab8bab404e8ad5019",
+  "source_files": [
+    {
+      "path": "rail/4-plated/2026-09-02-door43-mcp-gate2-3-docs-telemetry/CHECKLIST-RUN.md",
+      "sha": "f7275fb91daf8e3bbd9366b5fc7aea5e1891ed0a",
+      "mode": "100644"
+    },
+    {
+      "path": "rail/4-plated/2026-09-02-door43-mcp-gate2-3-docs-telemetry/DEBRIEF.md",
+      "sha": "fcd28f6cb3b1d6f63f3af81508d8764e78859377",
+      "mode": "100644"
+    },
+    {
+      "path": "rail/4-plated/2026-09-02-door43-mcp-gate2-3-docs-telemetry/LEARNING-CLAIM.md",
+      "sha": "6c6f4659f73247bf47cbc9e881e15828e0cd53d1",
+      "mode": "100644"
+    },
+    {
+      "path": "rail/4-plated/2026-09-02-door43-mcp-gate2-3-docs-telemetry/TICKET.md",
+      "sha": "18ee8b839a6454cf04c3b4a34a66b44cf0794159",
+      "mode": "100644"
+    }
+  ]
+}

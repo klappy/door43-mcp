@@ -1,0 +1,30 @@
+{
+  "source_commit": "d621c6f32e539522deeae2eab8bab404e8ad5019",
+  "source_files": [
+    {
+      "path": "rail/4-plated/2026-09-02-door43-mcp-v2-planning/CHECKLIST-RUN.md",
+      "sha": "a120a615d825e705b7f4ef1100ea559634e0c44f",
+      "mode": "100644"
+    },
+    {
+      "path": "rail/4-plated/2026-09-02-door43-mcp-v2-planning/DEBRIEF.md",
+      "sha": "d856bfa90e221a39aedf4c8eedca65207eeebc0c",
+      "mode": "100644"
+    },
+    {
+      "path": "rail/4-plated/2026-09-02-door43-mcp-v2-planning/DELTA.md",
+      "sha": "a53dcf88b6e1bd0ca20cedccb02da6e23d8b0d18",
+      "mode": "100644"
+    },
+    {
+      "path": "rail/4-plated/2026-09-02-door43-mcp-v2-planning/LEARNING-CLAIM.md",
+      "sha": "6c6f4659f73247bf47cbc9e881e15828e0cd53d1",
+      "mode": "100644"
+    },
+    {
+      "path": "rail/4-plated/2026-09-02-door43-mcp-v2-planning/TICKET.md",
+      "sha": "cfda83ae3ab1f4078331447d69be53e4d2711348",
+      "mode": "100644"
+    }
+  ]
+}
