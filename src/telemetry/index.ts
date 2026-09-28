@@ -15,11 +15,17 @@ export interface TelemetryDb {
   exec(sql: string): Promise<unknown>;
 }
 
-export const TELEMETRY_COLUMNS = [
-  "timestamp", "event_type", "method", "tool_name", "consumer_label", "consumer_source", "worker_version",
-  "status", "upstream_status", "upstream_ms", "path_family", "duration_ms", "bytes_in", "bytes_out",
-  "tokens_in", "tokens_out", "cache_hits", "cache_lookups", "truncated", "count",
+/** Shared core (VERDICT §3), then door43's declared per-server columns, then the nullable Jev block. */
+export const JEV_COLUMNS = [
+  "jev_contract", "jev_primitive", "jev_pick", "jev_p_top", "jev_margin", "jev_escalated", "jev_fallback", "jev_latency_ms", "jev_tokens_in",
 ] as const;
+export const TELEMETRY_COLUMNS = [
+  "ts", "server", "event_type", "method", "tool_name", "consumer_label", "consumer_source", "worker_version",
+  "outcome", "duration_ms", "bytes_in", "bytes_out", "tokens_in", "tokens_out", "cache_hits", "cache_lookups", "count",
+  "path_family", "upstream_status", "upstream_ms", "truncated",
+  ...JEV_COLUMNS,
+] as const;
+export const SERVER = "door43-mcp";
 export type TelemetryColumn = (typeof TELEMETRY_COLUMNS)[number];
 export type TelemetryRow = Record<TelemetryColumn, string | number | null>;
 
@@ -66,12 +72,15 @@ export interface Emit {
 /** Build the row from the allowlist only — a stray key on `e` never reaches the table. */
 export function toRow(e: Emit, now = new Date()): TelemetryRow {
   return {
-    timestamp: now.toISOString(), event_type: "tool_call", method: e.method ?? "-", tool_name: e.tool_name,
+    ts: now.toISOString(), server: SERVER, event_type: "tool_call", method: e.method ?? "-", tool_name: e.tool_name,
     consumer_label: e.consumer_label, consumer_source: e.consumer_source, worker_version: e.worker_version,
-    status: e.status, upstream_status: e.upstream_status ?? null, upstream_ms: e.upstream_ms ?? 0,
+    outcome: e.status, upstream_status: e.upstream_status ?? null, upstream_ms: e.upstream_ms ?? 0,
     path_family: pathFamily(e.path), duration_ms: e.duration_ms, bytes_in: e.bytes_in, bytes_out: e.bytes_out,
     tokens_in: Math.ceil(e.bytes_in / 4), tokens_out: Math.ceil(e.bytes_out / 4),
     cache_hits: e.cache_hits ?? 0, cache_lookups: e.cache_lookups ?? 0, truncated: e.truncated ? 1 : 0, count: 1,
+    // door43 makes no Jev call: the block is present and null (VERDICT §3 "null when Jev is off").
+    jev_contract: null, jev_primitive: null, jev_pick: null, jev_p_top: null, jev_margin: null,
+    jev_escalated: null, jev_fallback: null, jev_latency_ms: null, jev_tokens_in: null,
   };
 }
 
@@ -108,7 +117,7 @@ export function isReadOnlySql(sql: string): { ok: true } | { ok: false; reason: 
  *  Bounded read: newest 5,000 rows. A family with no rows is absent from the result (the caller says "no history"). */
 export async function p50BytesByFamily(db: TelemetryDb, days = 30, now = new Date()): Promise<Partial<Record<PathFamily, number>>> {
   const since = new Date(now.getTime() - days * 86_400_000).toISOString();
-  const res = await db.prepare(`SELECT path_family, bytes_out FROM ${TABLE} WHERE tool_name = 'execute' AND event_type = 'tool_call' AND status < 400 AND timestamp > ? ORDER BY timestamp DESC LIMIT 5000`).bind(since).all<{ path_family: string; bytes_out: number }>();
+  const res = await db.prepare(`SELECT path_family, bytes_out FROM ${TABLE} WHERE tool_name = 'execute' AND event_type = 'tool_call' AND outcome < 400 AND ts > ? ORDER BY ts DESC LIMIT 5000`).bind(since).all<{ path_family: string; bytes_out: number }>();
   const by: Record<string, number[]> = {};
   for (const r of res.results ?? []) (by[r.path_family] ??= []).push(Number(r.bytes_out));
   const out: Partial<Record<PathFamily, number>> = {};
