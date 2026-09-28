@@ -1,7 +1,8 @@
 /**
  * The gated /mcp side. OAuthProvider has verified the client token and decrypted
  * THIS grant's props before the agent runs. Gates 2+3: the three tools the ceiling
- * describes — `docs`, `execute`, `telemetry` — and nothing else.
+ * describes — `docs`, `execute`, `telemetry` — plus `telemetry_policy` (kitchen RULING 2026-09-25 Q1:
+ * one public `telemetry(sql, source)` + `telemetry_policy`), and nothing else.
  * Ceiling: klappy://canon/constraints/mcp-tool-surface-ceiling · convention §2.
  * Every tool call writes one telemetry row through `ctx.waitUntil` (src/telemetry).
  * Tool descriptions are the connector's whole UI on the phone: one line, verb-first, ≤ 80 chars.
@@ -14,7 +15,7 @@ import type { Envelope } from "./envelope";
 import { byteLength } from "./envelope";
 import { runExecute, VERSION, type Grant } from "./tools/execute";
 import { runDocs } from "./tools/docs";
-import { runTelemetry } from "./tools/telemetry";
+import { runTelemetry, runTelemetryPolicy, SOURCES } from "./tools/telemetry";
 import { writeRow, p50BytesByFamily, type TelemetryDb } from "./telemetry";
 import { DESCRIPTIONS } from "./descriptions";
 import { refreshDcs, swaggerDoc, swaggerPaths, upstreamVersion } from "./upstream";
@@ -41,7 +42,7 @@ export class Door43MCP extends McpAgent<Env, Record<string, never>, GrantProps> 
   }
 
   /** One row per call, off the response path. Only allowlisted columns leave here (src/telemetry toRow). */
-  private emit(tool: "docs" | "execute" | "telemetry", input: unknown, out: Envelope, t0: number) {
+  private emit(tool: "docs" | "execute" | "telemetry" | "telemetry_policy", input: unknown, out: Envelope, t0: number) {
     const db = this.env.TELEMETRY_DB as TelemetryDb | undefined;
     if (!db) return;
     const p = this.ctx.waitUntil(writeRow(db, {
@@ -135,12 +136,32 @@ export class Door43MCP extends McpAgent<Env, Record<string, never>, GrantProps> 
         title: "Read this server's own usage numbers",
         description: DESCRIPTIONS.telemetry,
         annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
-        inputSchema: { sql: z.string().describe("One SELECT over door43mcp_telemetry; no ';', no writes") },
+        inputSchema: {
+          sql: z.string().describe("One SELECT over door43mcp_telemetry; no ';', no writes"),
+          source: z.enum(SOURCES).optional().describe("exact (default): D1, unsampled · sampled: Analytics Engine mirror, or an explicit 'no mirror'"),
+        },
       },
       async (input) => {
         const t0 = Date.now();
-        const out = await runTelemetry({ host, upstreamVersion: await upstreamVersion(host), db: (env.TELEMETRY_DB as TelemetryDb | undefined) ?? null }, input);
+        // No AE mirror is bound on this deployment (wrangler.jsonc has no analytics_engine_datasets): `mirror: null` → sampled answers "no mirror".
+        const out = await runTelemetry({ host, upstreamVersion: await upstreamVersion(host), db: (env.TELEMETRY_DB as TelemetryDb | undefined) ?? null, mirror: null }, input);
         this.emit("telemetry", input, out, t0);
+        return this.reply(out);
+      },
+    );
+
+    this.server.registerTool(
+      "telemetry_policy",
+      {
+        title: "Read this server's telemetry policy",
+        description: "What this server records about calls, and what it never records",
+        annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+        inputSchema: {},
+      },
+      async (input) => {
+        const t0 = Date.now();
+        const out = runTelemetryPolicy({ host, upstreamVersion: await upstreamVersion(host), mirror: null });
+        this.emit("telemetry_policy", input, out, t0);
         return this.reply(out);
       },
     );
