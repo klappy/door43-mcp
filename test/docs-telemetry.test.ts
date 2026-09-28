@@ -194,3 +194,22 @@ describe("telemetry write (one row per call; column allowlist; no raw path)", ()
     expect(st.every((s) => /^CREATE (TABLE|INDEX) IF NOT EXISTS/.test(s))).toBe(true);
   });
 });
+
+describe("shared columns migration (ticket 2026-09-27-door43-telemetry-shared-columns S1)", () => {
+  const mig = readFileSync(new URL("../migrations/0001_shared_columns.sql", import.meta.url), "utf8");
+  const jev = ["jev_contract", "jev_primitive", "jev_pick", "jev_p_top", "jev_margin", "jev_escalated", "jev_fallback", "jev_latency_ms", "jev_tokens_in"];
+  it("renames timestamp→ts and status→outcome, adds server and the 9 nullable jev_*", () => {
+    expect(mig).toMatch(/RENAME COLUMN timestamp TO ts;/);
+    expect(mig).toMatch(/RENAME COLUMN status TO outcome;/);
+    expect(mig).toMatch(/ADD COLUMN server TEXT NOT NULL DEFAULT 'door43-mcp';/);
+    for (const c of jev) expect(mig).toMatch(new RegExp(`ADD COLUMN ${c} [A-Z]+;`));
+    expect(mig).not.toMatch(/\b(DROP|DELETE|UPDATE)\b/);
+  });
+  it("schema.sql, the migration and the writer agree on the column set", () => {
+    for (const c of ["ts", "server", "outcome", ...jev]) { expect(SCHEMA_SQL).toMatch(new RegExp(`\\b${c}\\b`)); expect(TELEMETRY_COLUMNS).toContain(c); }
+    expect(SCHEMA_SQL).not.toMatch(/\btimestamp\b|\bstatus INTEGER/);
+    const r = toRow({ tool_name: "docs", status: 200, duration_ms: 1, bytes_in: 2, bytes_out: 3, consumer_label: "x", consumer_source: "grant", worker_version: "0.5.0" });
+    expect(r.server).toBe("door43-mcp"); expect(r.outcome).toBe(200); expect(typeof r.ts).toBe("string");
+    for (const c of jev) expect(r[c as keyof typeof r]).toBeNull();
+  });
+});
