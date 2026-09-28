@@ -65,7 +65,7 @@ function familyOf(p: string): string { const s = p.split("/").filter(Boolean)[0]
 
 function boardingPass(d: DocsDeps) {
   return {
-    what: `door43-mcp ${d.version}: DCS as you. Three tools; reads only (v1).`,
+    what: `door43-mcp ${d.version}: DCS as you. Four tools; reads only (v1).`,
     is_not: "not a helps aggregator, host broker, token vault, write surface, or content cache",
     server: { version: d.version, url: d.serverUrl },
     upstream: { host: d.host, version: d.upstreamVersion },
@@ -73,7 +73,8 @@ function boardingPass(d: DocsDeps) {
     tools: {
       docs: "{rung?:map|raw|recipes, path?, query?, recipe?, args?} → this pass · map · one path · swagger slice · search · recipe schema · filled plan",
       execute: "{method:GET|HEAD, path, query?, fields?, headers?, continue?, pin?:{sha}, recipe?, args?, dry_run?} → envelope; path = /api/v1/… or /{o}/{r}/archive/{ref}.zip",
-      telemetry: "{sql} → rows; SELECT only over door43mcp_telemetry",
+      telemetry: "{sql, source?:exact|sampled} → rows; SELECT only over door43mcp_telemetry",
+      telemetry_policy: "{} → what is recorded, never recorded; declared columns",
     },
     map: "catalog · repos · user · users · orgs · misc — docs({rung:\"map\"})",
     recipes: Object.keys(RECIPES),

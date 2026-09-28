@@ -2,7 +2,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { runDocs, searchOps, RECIPES, CEILING_URI, SEAT_WORK_URI, PASS_CAP_BYTES, type DocsDeps } from "../src/tools/docs";
-import { runTelemetry } from "../src/tools/telemetry";
+import { runTelemetry, runTelemetryPolicy, PER_SERVER_COLUMNS, CORE_COLUMNS, NO_MIRROR } from "../src/tools/telemetry";
 import { isReadOnlySql, toRow, writeRow, pathFamily, schemaStatements, TELEMETRY_COLUMNS, type TelemetryDb } from "../src/telemetry";
 import { SCHEMA_SQL } from "../src/telemetry/schema";
 import { ENVELOPE_KEYS, byteLength } from "../src/envelope";
@@ -33,7 +33,7 @@ describe("docs L0 boarding pass (convention §8, acceptance 4, 8)", () => {
     expect((e.body as any).server.version).toBe("0.3.0");
     expect((e.body as any).upstream.version).toBe("1.27.2+dcs");
     expect((e.body as any).auth).toEqual({ logged_in_as: "klappy" });
-    expect(Object.keys((e.body as any).tools)).toEqual(["docs", "execute", "telemetry"]);
+    expect(Object.keys((e.body as any).tools)).toEqual(["docs", "execute", "telemetry", "telemetry_policy"]);
   });
   it("logged-out pass carries login_url instead", async () => {
     const e = await runDocs(deps({ login: null }), {});
@@ -211,5 +211,60 @@ describe("shared columns migration (ticket 2026-09-27-door43-telemetry-shared-co
     const r = toRow({ tool_name: "docs", status: 200, duration_ms: 1, bytes_in: 2, bytes_out: 3, consumer_label: "x", consumer_source: "grant", worker_version: "0.5.0" });
     expect(r.server).toBe("door43-mcp"); expect(r.outcome).toBe(200); expect(typeof r.ts).toBe("string");
     for (const c of jev) expect(r[c as keyof typeof r]).toBeNull();
+  });
+});
+
+describe("telemetry source=exact|sampled + telemetry_policy (ticket 2026-09-27-door43-telemetry-shared-columns S2)", () => {
+  const base = { host: "git.door43.org", upstreamVersion: "1.27.2+dcs" };
+  it("source defaults to exact; source=exact is the D1 channel", async () => {
+    const { db, stmts } = fakeDb();
+    const e = await runTelemetry({ ...base, db }, { sql: "SELECT COUNT(*) FROM door43mcp_telemetry", source: "exact" });
+    expect(e.status).toBe(200); expect((e.body as any).source).toBe("exact"); expect((e.body as any).exact).toBe(true);
+    expect(stmts.length).toBe(1);
+  });
+  it("source=sampled with no mirror answers an explicit 'no mirror', runs nothing, invents no rows", async () => {
+    const { db, stmts } = fakeDb();
+    const e = await runTelemetry({ ...base, db, mirror: null }, { sql: "SELECT COUNT(*) FROM door43mcp_telemetry", source: "sampled" });
+    expect(Object.keys(e)).toEqual([...ENVELOPE_KEYS]);
+    expect(e.status).toBe(200);
+    const b = e.body as any;
+    expect(b.source).toBe("sampled"); expect(b.mirror).toBeNull(); expect(b.rows).toBeNull(); expect(b.answer).toBe(NO_MIRROR);
+    expect(b.answer).toMatch(/^no mirror/);
+    expect(stmts.length).toBe(0);
+  });
+  it("source=sampled with a mirror answers from the mirror, marked not exact", async () => {
+    const seen: string[] = [];
+    const mirror = { dataset: "door43mcp_telemetry_ae", query: async (sql: string) => { seen.push(sql); return [{ n: 7 }]; } };
+    const e = await runTelemetry({ ...base, db: null, mirror }, { sql: "SELECT SUM(_sample_interval) AS n FROM door43mcp_telemetry_ae", source: "sampled" });
+    expect(e.status).toBe(200); expect((e.body as any).rows).toEqual([{ n: 7 }]); expect((e.body as any).exact).toBe(false);
+    expect(e.hints.join(" ")).toMatch(/_sample_interval/); expect(seen.length).toBe(1);
+  });
+  it("non-SELECT is refused on both channels; unknown source refused", async () => {
+    const mirror = { dataset: "x", query: async () => { throw new Error("must not run"); } };
+    for (const source of ["exact", "sampled"] as const) {
+      const { db, stmts } = fakeDb();
+      for (const sql of ["DELETE FROM door43mcp_telemetry", "SELECT 1; DROP TABLE door43mcp_telemetry"]) {
+        expect((await runTelemetry({ ...base, db, mirror }, { sql, source })).status).toBe(400);
+      }
+      expect(stmts.length).toBe(0);
+    }
+    const { db } = fakeDb();
+    expect((await runTelemetry({ ...base, db }, { sql: "SELECT 1", source: "bogus" as any })).status).toBe(400);
+  });
+  it("telemetry_policy declares path_family, upstream_status, upstream_ms, truncated as door43's per-server columns", () => {
+    const e = runTelemetryPolicy({ ...base, mirror: null });
+    expect(Object.keys(e)).toEqual([...ENVELOPE_KEYS]);
+    const b = e.body as any;
+    expect(b.columns.per_server).toEqual(["path_family", "upstream_status", "upstream_ms", "truncated"]);
+    expect(b.channels.sampled).toBe("no mirror");
+    expect([...b.columns.core, ...b.columns.per_server, ...b.columns.jev].sort()).toEqual([...TELEMETRY_COLUMNS].sort());
+    for (const c of ["ts", "server", "outcome"]) expect(CORE_COLUMNS).toContain(c);
+    expect(b.policy).toContain("door43's declared per-server columns:** `path_family, upstream_status, upstream_ms, truncated`");
+  });
+  it("TELEMETRY-POLICY.md names ts/outcome, not timestamp/status, and every written column", () => {
+    const md = readFileSync(new URL("../docs/TELEMETRY-POLICY.md", import.meta.url), "utf8");
+    for (const c of TELEMETRY_COLUMNS) expect(md).toMatch(new RegExp(`\\b${c}\\b`));
+    expect(md).not.toMatch(/`timestamp,|, status,/);
+    for (const c of PER_SERVER_COLUMNS) expect(TELEMETRY_COLUMNS).toContain(c);
   });
 });
